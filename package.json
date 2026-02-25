@@ -2,6 +2,9 @@
   "name": "@ex-machina/opencode-anthropic-auth",
   "version": "0.0.13",
   "main": "./index.mjs",
+  "scripts": {
+    "bump": "bun script/bump.ts"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/ex-machina-co/opencode-anthropic-auth"
