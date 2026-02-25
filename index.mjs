@@ -195,22 +195,6 @@ export async function AnthropicAuthPlugin({ client }) {
                 try {
                   const parsed = JSON.parse(body);
 
-                  // Sanitize system prompt - server blocks "OpenCode" string
-                  // Note: (?<!\/) preserves paths like /path/to/opencode-foo
-                  if (parsed.system && Array.isArray(parsed.system)) {
-                    parsed.system = parsed.system.map((item) => {
-                      if (item.type === "text" && item.text) {
-                        return {
-                          ...item,
-                          text: item.text
-                            .replace(/OpenCode/g, "Claude Code")
-                            .replace(/(?<!\/)opencode/gi, "Claude"),
-                        };
-                      }
-                      return item;
-                    });
-                  }
-
                   // Add prefix to tools definitions
                   if (parsed.tools && Array.isArray(parsed.tools)) {
                     parsed.tools = parsed.tools.map((tool) => ({
