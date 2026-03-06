@@ -1,4 +1,4 @@
-# @ex-machina/opencode-anthropic-auth
+# OpenCode Anthropic Auth Plugin
 
 An [OpenCode](https://github.com/anomalyco/opencode) plugin that provides Anthropic OAuth authentication, enabling Claude Pro/Max users to use their subscription directly with OpenCode.
 
