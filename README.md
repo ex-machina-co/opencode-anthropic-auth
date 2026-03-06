@@ -8,12 +8,6 @@ An [OpenCode](https://github.com/anomalyco/opencode) plugin that provides Anthro
   ![renaming.jpg](images/renaming.jpg)
 </details>
 
-## Installation
-
-```bash
-npm install @ex-machina/opencode-anthropic-auth
-```
-
 ## Usage
 
 Add the plugin to your OpenCode configuration:
