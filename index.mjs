@@ -105,36 +105,61 @@ export async function AnthropicAuthPlugin({ client }) {
               const auth = await getAuth();
               if (auth.type !== "oauth") return fetch(input, init);
               if (!auth.access || auth.expires < Date.now()) {
-                const response = await fetch(
-                  "https://console.anthropic.com/v1/oauth/token",
-                  {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                      grant_type: "refresh_token",
-                      refresh_token: auth.refresh,
-                      client_id: CLIENT_ID,
-                    }),
-                  },
-                );
-                if (!response.ok) {
-                  throw new Error(`Token refresh failed: ${response.status}`);
+                const MAX_RETRIES = 2;
+                const BASE_DELAY_MS = 500;
+                for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+                  try {
+                    if (attempt > 0) {
+                      const delay = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+                      await new Promise((r) => setTimeout(r, delay));
+                    }
+                    const response = await fetch(
+                      "https://console.anthropic.com/v1/oauth/token",
+                      {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                          grant_type: "refresh_token",
+                          refresh_token: auth.refresh,
+                          client_id: CLIENT_ID,
+                        }),
+                      },
+                    );
+                    if (!response.ok) {
+                      if (response.status >= 500 && attempt < MAX_RETRIES) {
+                        continue;
+                      }
+                      throw new Error(`Token refresh failed: ${response.status}`);
+                    }
+                    const json = await response.json();
+                    await client.auth.set({
+                      path: {
+                        id: "anthropic",
+                      },
+                      body: {
+                        type: "oauth",
+                        refresh: json.refresh_token,
+                        access: json.access_token,
+                        expires: Date.now() + json.expires_in * 1000,
+                      },
+                    });
+                    auth.access = json.access_token;
+                    break;
+                  } catch (err) {
+                    const isNetworkError =
+                      err.code === "ECONNRESET" ||
+                      err.code === "ECONNREFUSED" ||
+                      err.code === "ETIMEDOUT" ||
+                      err.code === "UND_ERR_CONNECT_TIMEOUT" ||
+                      err.message?.includes("fetch failed");
+                    if (attempt < MAX_RETRIES && isNetworkError) {
+                      continue;
+                    }
+                    throw err;
+                  }
                 }
-                const json = await response.json();
-                await client.auth.set({
-                  path: {
-                    id: "anthropic",
-                  },
-                  body: {
-                    type: "oauth",
-                    refresh: json.refresh_token,
-                    access: json.access_token,
-                    expires: Date.now() + json.expires_in * 1000,
-                  },
-                });
-                auth.access = json.access_token;
               }
               const requestInit = init ?? {};
 
