@@ -1,0 +1,7 @@
+{
+  "extends": "@tsconfig/bun/tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["script/**/*.ts"]
+}
