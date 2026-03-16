@@ -28,3 +28,5 @@ jobs:
 
       - name: Publish
         run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ""
