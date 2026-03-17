@@ -52,41 +52,79 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
               const auth = await getAuth()
               if (auth.type !== 'oauth') return fetch(input, init)
               if (!auth.access || !auth.expires || auth.expires < Date.now()) {
-                const response = await fetch(
-                  'https://console.anthropic.com/v1/oauth/token',
-                  {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                      grant_type: 'refresh_token',
-                      refresh_token: auth.refresh,
-                      client_id: CLIENT_ID,
-                    }),
-                  },
-                )
-                if (!response.ok) {
-                  throw new Error(`Token refresh failed: ${response.status}`)
+                const maxRetries = 2
+                const baseDelayMs = 500
+
+                for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                  try {
+                    if (attempt > 0) {
+                      const delay = baseDelayMs * 2 ** (attempt - 1)
+                      await new Promise((resolve) => setTimeout(resolve, delay))
+                    }
+
+                    const response = await fetch(
+                      'https://console.anthropic.com/v1/oauth/token',
+                      {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          grant_type: 'refresh_token',
+                          refresh_token: auth.refresh,
+                          client_id: CLIENT_ID,
+                        }),
+                      },
+                    )
+
+                    if (!response.ok) {
+                      if (response.status >= 500 && attempt < maxRetries) {
+                        response.body?.cancel()
+                        continue
+                      }
+
+                      throw new Error(
+                        `Token refresh failed: ${response.status}`,
+                      )
+                    }
+
+                    const json = (await response.json()) as {
+                      refresh_token: string
+                      access_token: string
+                      expires_in: number
+                    }
+
+                    // biome-ignore lint/suspicious/noExplicitAny: SDK types don't expose auth.set
+                    await (client as any).auth.set({
+                      path: {
+                        id: 'anthropic',
+                      },
+                      body: {
+                        type: 'oauth',
+                        refresh: json.refresh_token,
+                        access: json.access_token,
+                        expires: Date.now() + json.expires_in * 1000,
+                      },
+                    })
+                    auth.access = json.access_token
+                    break
+                  } catch (error) {
+                    const isNetworkError =
+                      error instanceof Error &&
+                      (error.message.includes('fetch failed') ||
+                        ('code' in error &&
+                          (error.code === 'ECONNRESET' ||
+                            error.code === 'ECONNREFUSED' ||
+                            error.code === 'ETIMEDOUT' ||
+                            error.code === 'UND_ERR_CONNECT_TIMEOUT')))
+
+                    if (attempt < maxRetries && isNetworkError) {
+                      continue
+                    }
+
+                    throw error
+                  }
                 }
-                const json = (await response.json()) as {
-                  refresh_token: string
-                  access_token: string
-                  expires_in: number
-                }
-                // biome-ignore lint/suspicious/noExplicitAny: SDK types don't expose auth.set
-                await (client as any).auth.set({
-                  path: {
-                    id: 'anthropic',
-                  },
-                  body: {
-                    type: 'oauth',
-                    refresh: json.refresh_token,
-                    access: json.access_token,
-                    expires: Date.now() + json.expires_in * 1000,
-                  },
-                })
-                auth.access = json.access_token
               }
 
               const requestHeaders = mergeHeaders(input, init)

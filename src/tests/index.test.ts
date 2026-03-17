@@ -248,7 +248,66 @@ describe('auth.loader', () => {
     expect(mockClient.auth.set).toHaveBeenCalled()
   })
 
-  test('fetch wrapper throws on failed token refresh', async () => {
+  test('fetch wrapper retries transient token refresh failures', async () => {
+    let tokenRefreshCalls = 0
+
+    globalThis.fetch = mock((input: any) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url
+
+      if (url.includes('/v1/oauth/token')) {
+        tokenRefreshCalls += 1
+
+        if (tokenRefreshCalls === 1) {
+          return Promise.resolve(
+            new Response('Temporary failure', { status: 500 }),
+          )
+        }
+
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              refresh_token: 'new-refresh',
+              access_token: 'new-access',
+              expires_in: 3600,
+            }),
+            { status: 200 },
+          ),
+        )
+      }
+
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const mockClient = createMockClient()
+    const plugin = await getPlugin(mockClient)
+    const result = await plugin.auth.loader(
+      () =>
+        Promise.resolve({
+          type: 'oauth',
+          access: 'expired',
+          refresh: 'refresh',
+          expires: Date.now() - 1000,
+        }),
+      { models: {} },
+    )
+
+    await result.fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      body: '{}',
+    })
+
+    expect(tokenRefreshCalls).toBe(2)
+    expect(mockClient.auth.set).toHaveBeenCalledTimes(1)
+  })
+
+  test('fetch wrapper does not retry non-transient token refresh failures', async () => {
+    let tokenRefreshCalls = 0
+
     globalThis.fetch = mock((input: any) => {
       const url =
         typeof input === 'string'
@@ -257,6 +316,7 @@ describe('auth.loader', () => {
             ? input.toString()
             : input.url
       if (url.includes('/v1/oauth/token')) {
+        tokenRefreshCalls += 1
         return Promise.resolve(new Response('Forbidden', { status: 403 }))
       }
       return Promise.resolve(new Response(null, { status: 200 }))
@@ -280,6 +340,8 @@ describe('auth.loader', () => {
         body: '{}',
       }),
     ).rejects.toThrow('Token refresh failed: 403')
+
+    expect(tokenRefreshCalls).toBe(1)
   })
 
   test('fetch wrapper strips tool prefix from streaming response', async () => {
