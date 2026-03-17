@@ -94,9 +94,11 @@ describe('auth.methods', () => {
 
 describe('auth.loader', () => {
   const originalFetch = globalThis.fetch
+  const originalSetTimeout = globalThis.setTimeout
 
   beforeEach(() => {
     globalThis.fetch = originalFetch
+    globalThis.setTimeout = originalSetTimeout
   })
 
   test('returns empty object for non-oauth auth', async () => {
@@ -250,6 +252,14 @@ describe('auth.loader', () => {
 
   test('fetch wrapper retries transient token refresh failures', async () => {
     let tokenRefreshCalls = 0
+    const setTimeoutMock = mock((handler: TimerHandler) => {
+      if (typeof handler === 'function') {
+        handler()
+      }
+      return 0 as ReturnType<typeof setTimeout>
+    }) as typeof setTimeout
+
+    globalThis.setTimeout = setTimeoutMock
 
     globalThis.fetch = mock((input: any) => {
       const url =
@@ -302,6 +312,8 @@ describe('auth.loader', () => {
     })
 
     expect(tokenRefreshCalls).toBe(2)
+    expect(setTimeoutMock).toHaveBeenCalledTimes(1)
+    expect(setTimeoutMock).toHaveBeenCalledWith(expect.any(Function), 500)
     expect(mockClient.auth.set).toHaveBeenCalledTimes(1)
   })
 

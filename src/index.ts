@@ -79,7 +79,7 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
 
                     if (!response.ok) {
                       if (response.status >= 500 && attempt < maxRetries) {
-                        response.body?.cancel()
+                        await response.body?.cancel()
                         continue
                       }
 
