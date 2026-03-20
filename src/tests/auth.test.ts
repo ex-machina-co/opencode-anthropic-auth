@@ -1,11 +1,14 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { authorize, exchange } from '../auth'
 import { CLIENT_ID, OAUTH_SCOPES, TOKEN_URL } from '../constants'
 
-const originalFetch = globalThis.fetch
+const realFetch = globalThis.fetch
 
 function mockTokenEndpoint(onBody?: (body: string) => void) {
-  globalThis.fetch = mock((input: any, init?: RequestInit) => {
+  return spyOn(globalThis, 'fetch').mockImplementation(((
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => {
     const url =
       typeof input === 'string'
         ? input
@@ -26,19 +29,15 @@ function mockTokenEndpoint(onBody?: (body: string) => void) {
       )
     }
 
-    return originalFetch(input, init)
-  }) as unknown as typeof fetch
+    return realFetch(input, init)
+  }) as typeof fetch)
 }
 
+afterEach(() => {
+  mock.restore()
+})
+
 describe('authorize', () => {
-  beforeEach(() => {
-    globalThis.fetch = originalFetch
-  })
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch
-  })
-
   test('returns a localhost callback URL for max mode', async () => {
     mockTokenEndpoint()
     const result = await authorize('max')
@@ -51,7 +50,7 @@ describe('authorize', () => {
     expect(url.pathname).toBe('/oauth/authorize')
     expect(url.searchParams.get('redirect_uri')).toBe(result.redirectUri)
 
-    await originalFetch(`${result.redirectUri}?code=test&state=${result.state}`)
+    await realFetch(`${result.redirectUri}?code=test&state=${result.state}`)
     await result.callback()
   })
 
@@ -63,7 +62,7 @@ describe('authorize', () => {
     expect(url.origin).toBe('https://platform.claude.com')
     expect(url.pathname).toBe('/oauth/authorize')
 
-    await originalFetch(`${result.redirectUri}?code=test&state=${result.state}`)
+    await realFetch(`${result.redirectUri}?code=test&state=${result.state}`)
     await result.callback()
   })
 
@@ -79,7 +78,7 @@ describe('authorize', () => {
     expect(url.searchParams.get('scope')).toBe(OAUTH_SCOPES.join(' '))
     expect(url.searchParams.get('code_challenge_method')).toBe('S256')
 
-    await originalFetch(`${result.redirectUri}?code=test&state=${result.state}`)
+    await realFetch(`${result.redirectUri}?code=test&state=${result.state}`)
     await result.callback()
   })
 
@@ -92,7 +91,7 @@ describe('authorize', () => {
     const result = await authorize('max')
     const callbackPromise = result.callback()
 
-    const browserResponse = await originalFetch(
+    const browserResponse = await realFetch(
       `${result.redirectUri}?code=mycode&state=${result.state}`,
     )
 
@@ -108,38 +107,33 @@ describe('authorize', () => {
   })
 
   test('fails on state mismatch', async () => {
-    const fetchMock = mock((input: any, init?: RequestInit) =>
-      originalFetch(input, init),
-    )
-    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) => realFetch(input, init)) as typeof fetch)
 
     const result = await authorize('max')
     const callbackPromise = result.callback()
 
-    const browserResponse = await originalFetch(
+    const browserResponse = await realFetch(
       `${result.redirectUri}?code=mycode&state=wrong-state`,
     )
 
     expect(browserResponse.status).toBe(400)
     expect(await callbackPromise).toEqual({ type: 'failed' })
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 })
 
 describe('exchange', () => {
-  beforeEach(() => {
-    globalThis.fetch = originalFetch
-  })
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch
-  })
-
   test('accepts a full localhost callback URL', async () => {
     let capturedBody: string | undefined
 
-    globalThis.fetch = mock((input: any, init: any) => {
-      capturedBody = init?.body
+    spyOn(globalThis, 'fetch').mockImplementation(((
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ) => {
+      capturedBody = init?.body as string
       return Promise.resolve(
         new Response(
           JSON.stringify({
@@ -150,7 +144,7 @@ describe('exchange', () => {
           { status: 200 },
         ),
       )
-    }) as unknown as typeof fetch
+    }) as typeof fetch)
 
     await exchange(
       'http://localhost:59233/callback?code=mycode&state=mystate',
@@ -165,8 +159,8 @@ describe('exchange', () => {
   })
 
   test('returns failed on invalid callback input', async () => {
-    const fetchMock = mock(() => Promise.resolve(new Response(null)))
-    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((() =>
+      Promise.resolve(new Response(null))) as unknown as typeof fetch)
 
     const result = await exchange(
       'not-a-callback',
@@ -174,12 +168,12 @@ describe('exchange', () => {
       'http://localhost:59233/callback',
     )
     expect(result.type).toBe('failed')
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   test('returns failed on state mismatch', async () => {
-    const fetchMock = mock(() => Promise.resolve(new Response(null)))
-    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation((() =>
+      Promise.resolve(new Response(null))) as unknown as typeof fetch)
 
     const result = await exchange(
       'code#wrong',
@@ -188,6 +182,6 @@ describe('exchange', () => {
       'expected',
     )
     expect(result.type).toBe('failed')
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 })
