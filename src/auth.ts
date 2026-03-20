@@ -1,11 +1,15 @@
 import { generatePKCE } from '@openauthjs/openauth/pkce'
 import { CLIENT_ID } from './constants'
 
+// Deduplicate concurrent exchange calls with the same code
+let pendingExchange: { code: string; promise: Promise<ExchangeResult> } | null =
+  null
+
 export async function authorize(mode: 'max' | 'console') {
   const pkce = await generatePKCE()
 
   const url = new URL(
-    `https://${mode === 'console' ? 'console.anthropic.com' : 'claude.ai'}/oauth/authorize`,
+    `https://${mode === 'console' ? 'platform.claude.com' : 'claude.ai'}/oauth/authorize`,
     import.meta.url,
   )
 
@@ -14,11 +18,11 @@ export async function authorize(mode: 'max' | 'console') {
   url.searchParams.set('response_type', 'code')
   url.searchParams.set(
     'redirect_uri',
-    'https://console.anthropic.com/oauth/code/callback',
+    'https://platform.claude.com/oauth/code/callback',
   )
   url.searchParams.set(
     'scope',
-    'org:create_api_key user:profile user:inference',
+    'org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload',
   )
   url.searchParams.set('code_challenge', pkce.challenge)
   url.searchParams.set('code_challenge_method', 'S256')
@@ -38,20 +42,44 @@ export async function exchange(
   code: string,
   verifier: string,
 ): Promise<ExchangeResult> {
-  const splits = code.split('#')
-  const result = await fetch('https://console.anthropic.com/v1/oauth/token', {
+  // Deduplicate: if we're already exchanging this exact code, return the same promise
+  if (pendingExchange && pendingExchange.code === code) {
+    return pendingExchange.promise
+  }
+
+  const promise = exchangeInternal(code, verifier)
+  pendingExchange = { code, promise }
+  try {
+    return await promise
+  } finally {
+    pendingExchange = null
+  }
+}
+
+async function exchangeInternal(
+  code: string,
+  verifier: string,
+): Promise<ExchangeResult> {
+  const [authCode, state] = code.split('#')
+
+  const bodyObj: Record<string, string> = {
+    code: authCode ?? code,
+    grant_type: 'authorization_code',
+    client_id: CLIENT_ID,
+    redirect_uri: 'https://platform.claude.com/oauth/code/callback',
+    code_verifier: verifier,
+  }
+  if (state) {
+    bodyObj.state = state
+  }
+
+  const result = await fetch('https://platform.claude.com/v1/oauth/token', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'User-Agent': 'axios/1.13.6',
     },
-    body: JSON.stringify({
-      code: splits[0],
-      state: splits[1],
-      grant_type: 'authorization_code',
-      client_id: CLIENT_ID,
-      redirect_uri: 'https://console.anthropic.com/oauth/code/callback',
-      code_verifier: verifier,
-    }),
+    body: JSON.stringify(bodyObj),
   })
 
   if (!result.ok) {
@@ -65,6 +93,7 @@ export async function exchange(
     access_token: string
     expires_in: number
   }
+
   return {
     type: 'success',
     refresh: json.refresh_token,

@@ -18,7 +18,7 @@ describe('authorize', () => {
     const result = await authorize('console')
 
     const url = new URL(result.url)
-    expect(url.origin).toBe('https://console.anthropic.com')
+    expect(url.origin).toBe('https://platform.claude.com')
     expect(url.pathname).toBe('/oauth/authorize')
   })
 
@@ -30,10 +30,10 @@ describe('authorize', () => {
     expect(url.searchParams.get('client_id')).toBe(CLIENT_ID)
     expect(url.searchParams.get('response_type')).toBe('code')
     expect(url.searchParams.get('redirect_uri')).toBe(
-      'https://console.anthropic.com/oauth/code/callback',
+      'https://platform.claude.com/oauth/code/callback',
     )
     expect(url.searchParams.get('scope')).toBe(
-      'org:create_api_key user:profile user:inference',
+      'org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload',
     )
     expect(url.searchParams.get('code_challenge_method')).toBe('S256')
   })
@@ -110,7 +110,7 @@ describe('exchange', () => {
     expect(body.grant_type).toBe('authorization_code')
     expect(body.client_id).toBe(CLIENT_ID)
     expect(body.redirect_uri).toBe(
-      'https://console.anthropic.com/oauth/code/callback',
+      'https://platform.claude.com/oauth/code/callback',
     )
     expect(body.code_verifier).toBe('myverifier')
   })
@@ -142,6 +142,33 @@ describe('exchange', () => {
     }) as unknown as typeof fetch
 
     await exchange('c#s', 'v')
-    expect(capturedUrl).toBe('https://console.anthropic.com/v1/oauth/token')
+    expect(capturedUrl).toBe('https://platform.claude.com/v1/oauth/token')
+  })
+
+  test('deduplicates concurrent calls with same code', async () => {
+    let callCount = 0
+
+    globalThis.fetch = mock(() => {
+      callCount++
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            refresh_token: 'r',
+            access_token: 'a',
+            expires_in: 3600,
+          }),
+          { status: 200 },
+        ),
+      )
+    }) as unknown as typeof fetch
+
+    const [result1, result2] = await Promise.all([
+      exchange('same-code#same-state', 'v1'),
+      exchange('same-code#same-state', 'v1'),
+    ])
+
+    expect(callCount).toBe(1)
+    expect(result1.type).toBe('success')
+    expect(result2.type).toBe('success')
   })
 })
