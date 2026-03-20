@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { AnthropicAuthPlugin } from '../index'
 
 // Minimal mock of the OpenCode plugin client
@@ -97,6 +97,11 @@ describe('auth.loader', () => {
   const originalSetTimeout = globalThis.setTimeout
 
   beforeEach(() => {
+    globalThis.fetch = originalFetch
+    globalThis.setTimeout = originalSetTimeout
+  })
+
+  afterEach(() => {
     globalThis.fetch = originalFetch
     globalThis.setTimeout = originalSetTimeout
   })

@@ -2,7 +2,9 @@ import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { authorize, exchange } from '../auth'
 import { CLIENT_ID, OAUTH_SCOPES, TOKEN_URL } from '../constants'
 
-const realFetch = globalThis.fetch
+function browserFetch(input: string | URL | Request, init?: RequestInit) {
+  return Bun.fetch(input, init)
+}
 
 function mockTokenEndpoint(onBody?: (body: string) => void) {
   return spyOn(globalThis, 'fetch').mockImplementation(((
@@ -29,7 +31,7 @@ function mockTokenEndpoint(onBody?: (body: string) => void) {
       )
     }
 
-    return realFetch(input, init)
+    return browserFetch(input, init)
   }) as typeof fetch)
 }
 
@@ -50,7 +52,7 @@ describe('authorize', () => {
     expect(url.pathname).toBe('/oauth/authorize')
     expect(url.searchParams.get('redirect_uri')).toBe(result.redirectUri)
 
-    await realFetch(`${result.redirectUri}?code=test&state=${result.state}`)
+    await browserFetch(`${result.redirectUri}?code=test&state=${result.state}`)
     await result.callback()
   })
 
@@ -62,7 +64,7 @@ describe('authorize', () => {
     expect(url.origin).toBe('https://platform.claude.com')
     expect(url.pathname).toBe('/oauth/authorize')
 
-    await realFetch(`${result.redirectUri}?code=test&state=${result.state}`)
+    await browserFetch(`${result.redirectUri}?code=test&state=${result.state}`)
     await result.callback()
   })
 
@@ -78,7 +80,7 @@ describe('authorize', () => {
     expect(url.searchParams.get('scope')).toBe(OAUTH_SCOPES.join(' '))
     expect(url.searchParams.get('code_challenge_method')).toBe('S256')
 
-    await realFetch(`${result.redirectUri}?code=test&state=${result.state}`)
+    await browserFetch(`${result.redirectUri}?code=test&state=${result.state}`)
     await result.callback()
   })
 
@@ -91,7 +93,7 @@ describe('authorize', () => {
     const result = await authorize('max')
     const callbackPromise = result.callback()
 
-    const browserResponse = await realFetch(
+    const browserResponse = await browserFetch(
       `${result.redirectUri}?code=mycode&state=${result.state}`,
     )
 
@@ -110,12 +112,12 @@ describe('authorize', () => {
     const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((
       input: string | URL | Request,
       init?: RequestInit,
-    ) => realFetch(input, init)) as typeof fetch)
+    ) => browserFetch(input, init)) as typeof fetch)
 
     const result = await authorize('max')
     const callbackPromise = result.callback()
 
-    const browserResponse = await realFetch(
+    const browserResponse = await browserFetch(
       `${result.redirectUri}?code=mycode&state=wrong-state`,
     )
 
