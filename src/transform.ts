@@ -1,4 +1,12 @@
-import { REQUIRED_BETAS, TOOL_PREFIX } from './constants'
+import {
+  BILLING_CCH,
+  BILLING_SAMPLE_INDICES,
+  CLAUDE_CODE_BILLING_SALT,
+  CLAUDE_CODE_USER_AGENT,
+  CLAUDE_CODE_VERSION,
+  REQUIRED_BETAS,
+  TOOL_PREFIX,
+} from './constants'
 
 export type FetchInput = string | URL | Request
 
@@ -63,7 +71,7 @@ export function setOAuthHeaders(
 ): Headers {
   headers.set('authorization', `Bearer ${accessToken}`)
   headers.set('anthropic-beta', mergeBetaHeaders(headers))
-  headers.set('user-agent', 'claude-cli/2.1.2 (external, cli)')
+  headers.set('user-agent', CLAUDE_CODE_USER_AGENT)
   headers.delete('x-api-key')
   return headers
 }
@@ -75,6 +83,28 @@ export function setOAuthHeaders(
 export function prefixToolNames(body: string): string {
   try {
     const parsed = JSON.parse(body)
+
+    // Rewrite "OpenCode" -> "Claude Code" in system prompt blocks
+    if (parsed.system && Array.isArray(parsed.system)) {
+      parsed.system = parsed.system.map(
+        (item: { type?: string; text?: string; [k: string]: unknown }) => {
+          if (
+            item &&
+            typeof item === 'object' &&
+            item.type === 'text' &&
+            typeof item.text === 'string'
+          ) {
+            return {
+              ...item,
+              text: item.text
+                .replace(/OpenCode/g, 'Claude Code')
+                .replace(/opencode/gi, 'Claude'),
+            }
+          }
+          return item
+        },
+      )
+    }
 
     if (parsed.tools && Array.isArray(parsed.tools)) {
       parsed.tools = parsed.tools.map(
@@ -157,6 +187,84 @@ export function rewriteUrl(input: FetchInput): {
   }
 
   return { input, url: requestUrl }
+}
+
+/**
+ * Compute the billing header string from the request body.
+ * This is injected as the first system prompt text block, not as an HTTP header.
+ *
+ * Algorithm (from clewdr reverse-engineering):
+ * 1. Find the first user message's first text content
+ * 2. Sample UTF-16 code units at indices [4, 7, 20] (out-of-bounds -> '0')
+ * 3. SHA-256(salt + sampled_chars + version), take first 3 hex chars
+ * 4. Format: "x-anthropic-billing-header: cc_version=<ver>.<hash>; cc_entrypoint=cli; cch=00000;"
+ */
+export async function computeBillingHeader(body: string): Promise<string> {
+  try {
+    const parsed = JSON.parse(body)
+    let firstUserText = ''
+
+    if (parsed.messages && Array.isArray(parsed.messages)) {
+      for (const msg of parsed.messages) {
+        if (msg.role === 'user') {
+          if (typeof msg.content === 'string') {
+            firstUserText = msg.content
+          } else if (Array.isArray(msg.content)) {
+            for (const block of msg.content) {
+              if (block.type === 'text' && typeof block.text === 'string') {
+                firstUserText = block.text
+                break
+              }
+            }
+          }
+          break
+        }
+      }
+    }
+
+    const sampled = BILLING_SAMPLE_INDICES.map((i) =>
+      i < firstUserText.length ? firstUserText.charAt(i) : '0',
+    ).join('')
+
+    const hashInput = `${CLAUDE_CODE_BILLING_SALT}${sampled}${CLAUDE_CODE_VERSION}`
+    const hashBuffer = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(hashInput),
+    )
+    const hashHex = Array.from(new Uint8Array(hashBuffer))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')
+    const hashPrefix = hashHex.slice(0, 3)
+
+    return `x-anthropic-billing-header: cc_version=${CLAUDE_CODE_VERSION}.${hashPrefix}; cc_entrypoint=cli; cch=${BILLING_CCH};`
+  } catch {
+    return `x-anthropic-billing-header: cc_version=${CLAUDE_CODE_VERSION}.000; cc_entrypoint=cli; cch=${BILLING_CCH};`
+  }
+}
+
+/**
+ * Inject the billing header as the first system text block in the request body.
+ */
+export async function injectBillingHeader(body: string): Promise<string> {
+  try {
+    const parsed = JSON.parse(body)
+    const billingHeader = await computeBillingHeader(body)
+
+    if (typeof parsed.system === 'string') {
+      parsed.system = [
+        { type: 'text', text: billingHeader },
+        { type: 'text', text: parsed.system },
+      ]
+    } else if (Array.isArray(parsed.system)) {
+      parsed.system.unshift({ type: 'text', text: billingHeader })
+    } else {
+      parsed.system = [{ type: 'text', text: billingHeader }]
+    }
+
+    return JSON.stringify(parsed)
+  } catch {
+    return body
+  }
 }
 
 /**

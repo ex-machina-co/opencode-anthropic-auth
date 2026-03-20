@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import { REQUIRED_BETAS } from '../constants'
 import {
+  computeBillingHeader,
   createStrippedStream,
+  injectBillingHeader,
   mergeBetaHeaders,
   mergeHeaders,
   prefixToolNames,
@@ -108,7 +110,7 @@ describe('setOAuthHeaders', () => {
   test('sets user-agent', () => {
     const headers = new Headers()
     setOAuthHeaders(headers, 'token')
-    expect(headers.get('user-agent')).toContain('claude-cli')
+    expect(headers.get('user-agent')).toContain('claude-code')
   })
 
   test('removes x-api-key', () => {
@@ -124,6 +126,40 @@ describe('setOAuthHeaders', () => {
     for (const beta of REQUIRED_BETAS) {
       expect(headers.get('anthropic-beta')).toContain(beta)
     }
+  })
+})
+
+describe('prefixToolNames - OpenCode rewriting', () => {
+  test('rewrites OpenCode to Claude Code in system prompt blocks', () => {
+    const body = JSON.stringify({
+      system: [
+        { type: 'text', text: 'You are OpenCode, a coding assistant.' },
+        { type: 'text', text: 'Use opencode tools.' },
+      ],
+    })
+    const result = JSON.parse(prefixToolNames(body))
+    expect(result.system[0].text).toBe(
+      'You are Claude Code, a coding assistant.',
+    )
+    expect(result.system[1].text).toBe('Use Claude tools.')
+  })
+
+  test('does not rewrite non-text system blocks', () => {
+    const body = JSON.stringify({
+      system: [{ type: 'image', data: 'OpenCode' }],
+    })
+    const result = JSON.parse(prefixToolNames(body))
+    expect(result.system[0].data).toBe('OpenCode')
+  })
+
+  test('handles system as string (no rewriting)', () => {
+    const body = JSON.stringify({
+      system: 'A string system prompt with OpenCode',
+      tools: [],
+    })
+    const result = JSON.parse(prefixToolNames(body))
+    // system is a string, not array — no rewriting applied
+    expect(result.system).toBe('A string system prompt with OpenCode')
   })
 })
 
@@ -251,6 +287,92 @@ describe('rewriteUrl', () => {
     const { input } = rewriteUrl(original)
     const url = new URL(input.toString())
     expect(url.searchParams.has('beta')).toBe(false)
+  })
+})
+
+describe('computeBillingHeader', () => {
+  test('short message "hey" - all indices out of bounds', async () => {
+    const body = JSON.stringify({
+      messages: [{ role: 'user', content: 'hey' }],
+    })
+    const result = await computeBillingHeader(body)
+    expect(result).toBe(
+      'x-anthropic-billing-header: cc_version=2.1.79.7b3; cc_entrypoint=cli; cch=00000;',
+    )
+  })
+
+  test('message "abcdefg" - index 4 in bounds, 7 and 20 out', async () => {
+    const body = JSON.stringify({
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', source: { data: 'xxx' } },
+            { type: 'text', text: 'abcdefg' },
+          ],
+        },
+      ],
+    })
+    const result = await computeBillingHeader(body)
+    expect(result).toBe(
+      'x-anthropic-billing-header: cc_version=2.1.79.70c; cc_entrypoint=cli; cch=00000;',
+    )
+  })
+
+  test('no user messages - all indices fallback to 0', async () => {
+    const body = JSON.stringify({
+      messages: [{ role: 'assistant', content: 'hello' }],
+    })
+    const result = await computeBillingHeader(body)
+    expect(result).toContain('cc_version=2.1.79.')
+    expect(result).toContain('cc_entrypoint=cli')
+    expect(result).toContain('cch=00000')
+  })
+
+  test('returns fallback on invalid JSON', async () => {
+    const result = await computeBillingHeader('not valid json')
+    expect(result).toBe(
+      'x-anthropic-billing-header: cc_version=2.1.79.000; cc_entrypoint=cli; cch=00000;',
+    )
+  })
+})
+
+describe('injectBillingHeader', () => {
+  test('injects billing as first block with string system', async () => {
+    const body = JSON.stringify({
+      system: 'You are helpful.',
+      messages: [{ role: 'user', content: 'hey' }],
+    })
+    const result = JSON.parse(await injectBillingHeader(body))
+    expect(Array.isArray(result.system)).toBe(true)
+    expect(result.system[0].type).toBe('text')
+    expect(result.system[0].text).toStartWith('x-anthropic-billing-header:')
+    expect(result.system[1].text).toBe('You are helpful.')
+  })
+
+  test('injects billing as first block with array system', async () => {
+    const body = JSON.stringify({
+      system: [{ type: 'text', text: 'existing' }],
+      messages: [{ role: 'user', content: 'hey' }],
+    })
+    const result = JSON.parse(await injectBillingHeader(body))
+    expect(result.system[0].text).toStartWith('x-anthropic-billing-header:')
+    expect(result.system[1].text).toBe('existing')
+  })
+
+  test('creates system array when no system exists', async () => {
+    const body = JSON.stringify({
+      messages: [{ role: 'user', content: 'hey' }],
+    })
+    const result = JSON.parse(await injectBillingHeader(body))
+    expect(Array.isArray(result.system)).toBe(true)
+    expect(result.system).toHaveLength(1)
+    expect(result.system[0].text).toStartWith('x-anthropic-billing-header:')
+  })
+
+  test('returns original body on invalid JSON', async () => {
+    const body = 'not valid json'
+    expect(await injectBillingHeader(body)).toBe(body)
   })
 })
 
