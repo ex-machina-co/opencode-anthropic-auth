@@ -133,13 +133,23 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
               // biome-ignore lint/style/noNonNullAssertion: access is guaranteed set above
               setOAuthHeaders(requestHeaders, auth.access!)
 
+              const rewritten = rewriteUrl(input)
+
               let body = init?.body
+              const url =
+                typeof rewritten.input === 'string'
+                  ? rewritten.input
+                  : rewritten.input instanceof URL
+                    ? rewritten.input.href
+                    : rewritten.input instanceof Request
+                      ? rewritten.input.url
+                      : ''
               if (body && typeof body === 'string') {
                 body = prefixToolNames(body)
-                body = await injectBillingHeader(body)
+                if (url.includes('/v1/messages')) {
+                  body = await injectBillingHeader(body)
+                }
               }
-
-              const rewritten = rewriteUrl(input)
 
               const response = await fetch(rewritten.input, {
                 ...init,

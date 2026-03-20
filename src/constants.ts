@@ -7,7 +7,7 @@ export const REQUIRED_BETAS = [
   'interleaved-thinking-2025-05-14',
 ]
 
-export const CLAUDE_CODE_VERSION = '2.1.79'
+export const CLAUDE_CODE_VERSION = '2.1.80'
 export const CLAUDE_CODE_USER_AGENT = `claude-code/${CLAUDE_CODE_VERSION}`
 export const CLAUDE_CODE_BILLING_SALT = '59cf53e54c78'
 export const BILLING_SAMPLE_INDICES = [4, 7, 20] as const

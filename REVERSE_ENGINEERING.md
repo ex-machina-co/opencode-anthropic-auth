@@ -283,13 +283,11 @@ curl -X POST "https://platform.claude.com/v1/oauth/token" \
 
 **`src/constants.ts`** — Updated version to `2.1.80`, added billing constants (salt, sample indices, cch), added `CLAUDE_CODE_USER_AGENT`
 
-**`src/auth.ts`** — Migrated URLs to `platform.claude.com`, fixed OAuth scopes to match v2.1.80, set User-Agent to `axios/1.13.6`, added exchange deduplication, added logging
+**`src/auth.ts`** — Migrated URLs to `platform.claude.com`, fixed OAuth scopes to match v2.1.80, set User-Agent to `axios/1.13.6`, added exchange deduplication
 
 **`src/transform.ts`** — Fixed user-agent on API calls, added billing header computation (`computeBillingHeader`), added system prompt injection (`injectBillingHeader`), added `OpenCode` -> `Claude Code` text replacement in system prompts
 
-**`src/index.ts`** — Integrated billing header injection, migrated token refresh to `platform.claude.com`, set User-Agent to `axios/1.13.6` on refresh, added logging
-
-**`src/logger.ts`** — New file, writes debug logs to `~/.config/opencode-anthropic-auth/debug.log`
+**`src/index.ts`** — Integrated billing header injection (gated to `/v1/messages` only), migrated token refresh to `platform.claude.com`, set User-Agent to `axios/1.13.6` on refresh
 
 ### OpenCode configuration
 
