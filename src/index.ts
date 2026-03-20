@@ -67,13 +67,14 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
                       {
                         method: 'POST',
                         headers: {
-                          'Content-Type': 'application/json',
+                          'Content-Type': 'application/x-www-form-urlencoded',
+                          'User-Agent': 'claude-cli/2.1.2 (external, cli)',
                         },
-                        body: JSON.stringify({
+                        body: new URLSearchParams({
                           grant_type: 'refresh_token',
-                          refresh_token: auth.refresh,
+                          refresh_token: auth.refresh!,
                           client_id: CLIENT_ID,
-                        }),
+                        }).toString(),
                       },
                     )
 

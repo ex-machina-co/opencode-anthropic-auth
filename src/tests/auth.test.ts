@@ -85,11 +85,13 @@ describe('exchange', () => {
     }
   })
 
-  test('sends correct request body', async () => {
+  test('sends correct request body as form-urlencoded', async () => {
     let capturedBody: string | undefined
+    let capturedHeaders: Record<string, string> | undefined
 
     globalThis.fetch = mock((input: any, init: any) => {
       capturedBody = init?.body
+      capturedHeaders = init?.headers
       return Promise.resolve(
         new Response(
           JSON.stringify({
@@ -104,15 +106,17 @@ describe('exchange', () => {
 
     await exchange('mycode#mystate', 'myverifier')
 
-    const body = JSON.parse(capturedBody!)
-    expect(body.code).toBe('mycode')
-    expect(body.state).toBe('mystate')
-    expect(body.grant_type).toBe('authorization_code')
-    expect(body.client_id).toBe(CLIENT_ID)
-    expect(body.redirect_uri).toBe(
+    const body = new URLSearchParams(capturedBody!)
+    expect(body.get('code')).toBe('mycode')
+    expect(body.get('state')).toBe('mystate')
+    expect(body.get('grant_type')).toBe('authorization_code')
+    expect(body.get('client_id')).toBe(CLIENT_ID)
+    expect(body.get('redirect_uri')).toBe(
       'https://console.anthropic.com/oauth/code/callback',
     )
-    expect(body.code_verifier).toBe('myverifier')
+    expect(body.get('code_verifier')).toBe('myverifier')
+    expect(capturedHeaders?.['Content-Type']).toBe('application/x-www-form-urlencoded')
+    expect(capturedHeaders?.['User-Agent']).toBe('claude-cli/2.1.2 (external, cli)')
   })
 
   test('returns failed on non-OK response', async () => {

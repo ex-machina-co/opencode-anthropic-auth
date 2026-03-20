@@ -42,16 +42,17 @@ export async function exchange(
   const result = await fetch('https://console.anthropic.com/v1/oauth/token', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'claude-cli/2.1.2 (external, cli)',
     },
-    body: JSON.stringify({
+    body: new URLSearchParams({
       code: splits[0],
       state: splits[1],
       grant_type: 'authorization_code',
       client_id: CLIENT_ID,
       redirect_uri: 'https://console.anthropic.com/oauth/code/callback',
       code_verifier: verifier,
-    }),
+    }).toString(),
   })
 
   if (!result.ok) {

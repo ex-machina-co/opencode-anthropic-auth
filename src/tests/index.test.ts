@@ -242,9 +242,9 @@ describe('auth.loader', () => {
     // Should have called token endpoint first
     const tokenCall = fetchCalls.find((c) => c.url.includes('/v1/oauth/token'))
     expect(tokenCall).toBeDefined()
-    const tokenBody = JSON.parse(tokenCall!.body!)
-    expect(tokenBody.grant_type).toBe('refresh_token')
-    expect(tokenBody.refresh_token).toBe('old-refresh')
+    const tokenBody = new URLSearchParams(tokenCall!.body!)
+    expect(tokenBody.get('grant_type')).toBe('refresh_token')
+    expect(tokenBody.get('refresh_token')).toBe('old-refresh')
 
     // Should have called client.auth.set with new tokens
     expect(mockClient.auth.set).toHaveBeenCalled()
