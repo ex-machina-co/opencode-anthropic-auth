@@ -564,7 +564,7 @@ describe('auth.loader', () => {
     const parsed = JSON.parse(capturedBody!)
     expect(parsed.system[0].type).toBe('text')
     expect(parsed.system[0].text).toStartWith('x-anthropic-billing-header:')
-    expect(parsed.system[0].text).toContain('cc_version=2.1.79.')
+    expect(parsed.system[0].text).toContain('cc_version=2.1.80.')
   })
 
   test('fetch wrapper adds beta=true to /v1/messages URL', async () => {

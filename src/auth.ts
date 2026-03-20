@@ -63,7 +63,7 @@ async function exchangeInternal(
   const [authCode, state] = code.split('#')
 
   const bodyObj: Record<string, string> = {
-    code: authCode ?? code,
+    code: authCode || code,
     grant_type: 'authorization_code',
     client_id: CLIENT_ID,
     redirect_uri: 'https://platform.claude.com/oauth/code/callback',

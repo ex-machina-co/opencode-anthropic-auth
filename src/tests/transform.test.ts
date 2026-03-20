@@ -297,7 +297,7 @@ describe('computeBillingHeader', () => {
     })
     const result = await computeBillingHeader(body)
     expect(result).toBe(
-      'x-anthropic-billing-header: cc_version=2.1.79.7b3; cc_entrypoint=cli; cch=00000;',
+      'x-anthropic-billing-header: cc_version=2.1.80.7aa; cc_entrypoint=cli; cch=00000;',
     )
   })
 
@@ -315,7 +315,7 @@ describe('computeBillingHeader', () => {
     })
     const result = await computeBillingHeader(body)
     expect(result).toBe(
-      'x-anthropic-billing-header: cc_version=2.1.79.70c; cc_entrypoint=cli; cch=00000;',
+      'x-anthropic-billing-header: cc_version=2.1.80.195; cc_entrypoint=cli; cch=00000;',
     )
   })
 
@@ -324,7 +324,7 @@ describe('computeBillingHeader', () => {
       messages: [{ role: 'assistant', content: 'hello' }],
     })
     const result = await computeBillingHeader(body)
-    expect(result).toContain('cc_version=2.1.79.')
+    expect(result).toContain('cc_version=2.1.80.')
     expect(result).toContain('cc_entrypoint=cli')
     expect(result).toContain('cch=00000')
   })
@@ -332,7 +332,7 @@ describe('computeBillingHeader', () => {
   test('returns fallback on invalid JSON', async () => {
     const result = await computeBillingHeader('not valid json')
     expect(result).toBe(
-      'x-anthropic-billing-header: cc_version=2.1.79.000; cc_entrypoint=cli; cch=00000;',
+      'x-anthropic-billing-header: cc_version=2.1.80.000; cc_entrypoint=cli; cch=00000;',
     )
   })
 })
