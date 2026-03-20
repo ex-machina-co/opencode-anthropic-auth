@@ -3,6 +3,7 @@ import { authorize, exchange } from './auth'
 import { CLIENT_ID } from './constants'
 import {
   createStrippedStream,
+  injectBillingHeader,
   mergeHeaders,
   prefixToolNames,
   rewriteUrl,
@@ -63,11 +64,12 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
                     }
 
                     const response = await fetch(
-                      'https://console.anthropic.com/v1/oauth/token',
+                      'https://platform.claude.com/v1/oauth/token',
                       {
                         method: 'POST',
                         headers: {
                           'Content-Type': 'application/json',
+                          'User-Agent': 'axios/1.13.6',
                         },
                         body: JSON.stringify({
                           grant_type: 'refresh_token',
@@ -134,6 +136,7 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
               let body = init?.body
               if (body && typeof body === 'string') {
                 body = prefixToolNames(body)
+                body = await injectBillingHeader(body)
               }
 
               const rewritten = rewriteUrl(input)
