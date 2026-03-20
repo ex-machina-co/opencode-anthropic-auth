@@ -1,6 +1,6 @@
 import type { Plugin } from '@opencode-ai/plugin'
-import { authorize, exchange } from './auth'
-import { CLIENT_ID } from './constants'
+import { authorize } from './auth'
+import { CLIENT_ID, TOKEN_URL } from './constants'
 import {
   createStrippedStream,
   mergeHeaders,
@@ -62,20 +62,19 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
                       await new Promise((resolve) => setTimeout(resolve, delay))
                     }
 
-                    const response = await fetch(
-                      'https://console.anthropic.com/v1/oauth/token',
-                      {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                          grant_type: 'refresh_token',
-                          refresh_token: auth.refresh,
-                          client_id: CLIENT_ID,
-                        }),
+                    const response = await fetch(TOKEN_URL, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        Accept: 'application/json, text/plain, */*',
+                        'User-Agent': 'axios/1.13.6',
                       },
-                    )
+                      body: JSON.stringify({
+                        grant_type: 'refresh_token',
+                        refresh_token: auth.refresh,
+                        client_id: CLIENT_ID,
+                      }),
+                    })
 
                     if (!response.ok) {
                       if (response.status >= 500 && attempt < maxRetries) {
@@ -156,15 +155,12 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
           label: 'Claude Pro/Max',
           type: 'oauth',
           authorize: async () => {
-            const { url, verifier } = await authorize('max')
+            const result = await authorize('max')
             return {
-              url: url,
-              instructions: 'Paste the authorization code here: ',
-              method: 'code',
-              callback: async (code: string) => {
-                const credentials = await exchange(code, verifier)
-                return credentials
-              },
+              url: result.url,
+              instructions: 'Complete authorization in the browser.',
+              method: 'auto',
+              callback: result.callback,
             }
           },
         },
@@ -172,13 +168,13 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
           label: 'Create an API Key',
           type: 'oauth',
           authorize: async () => {
-            const { url, verifier } = await authorize('console')
+            const auth = await authorize('console')
             return {
-              url: url,
-              instructions: 'Paste the authorization code here: ',
-              method: 'code',
-              callback: async (code: string) => {
-                const credentials = await exchange(code, verifier)
+              url: auth.url,
+              instructions: 'Complete authorization in the browser.',
+              method: 'auto',
+              callback: async () => {
+                const credentials = await auth.callback()
                 if (credentials.type === 'failed') return credentials
                 const result = await fetch(
                   `https://api.anthropic.com/api/oauth/claude_cli/create_api_key`,

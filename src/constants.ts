@@ -1,5 +1,21 @@
 export const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 
+export const AUTHORIZE_URLS = {
+  console: 'https://platform.claude.com/oauth/authorize',
+  max: 'https://claude.ai/oauth/authorize',
+} as const
+
+export const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token'
+
+export const OAUTH_SCOPES = [
+  'org:create_api_key',
+  'user:profile',
+  'user:inference',
+  'user:sessions:claude_code',
+  'user:mcp_servers',
+  'user:file_upload',
+]
+
 export const TOOL_PREFIX = 'mcp_'
 
 export const REQUIRED_BETAS = [
