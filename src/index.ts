@@ -65,11 +65,11 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
                     const response = await fetch(TOKEN_URL, {
                       method: 'POST',
                       headers: {
-                        'Content-Type': 'application/json',
+                        'Content-Type': 'application/x-www-form-urlencoded',
                         Accept: 'application/json, text/plain, */*',
-                        'User-Agent': 'axios/1.13.6',
+                        'User-Agent': 'claude-cli/2.1.2 (external, cli)',
                       },
-                      body: JSON.stringify({
+                      body: new URLSearchParams({
                         grant_type: 'refresh_token',
                         refresh_token: auth.refresh,
                         client_id: CLIENT_ID,
