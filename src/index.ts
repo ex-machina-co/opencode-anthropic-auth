@@ -71,7 +71,7 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
                       },
                       body: new URLSearchParams({
                         grant_type: 'refresh_token',
-                        refresh_token: auth.refresh,
+                        refresh_token: auth.refresh ?? '',
                         client_id: CLIENT_ID,
                       }),
                     })
