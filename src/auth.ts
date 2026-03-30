@@ -1,41 +1,22 @@
-import { createServer, type Server } from 'node:http'
 import { generatePKCE } from '@openauthjs/openauth/pkce'
-import { AUTHORIZE_URLS, CLIENT_ID, OAUTH_SCOPES, TOKEN_URL } from './constants'
-
-const CALLBACK_TIMEOUT_MS = 5 * 60 * 1000
+import {
+  AUTHORIZE_URLS,
+  CLIENT_ID,
+  CODE_CALLBACK_URL,
+  OAUTH_SCOPES,
+  TOKEN_URL,
+} from './constants'
 
 type CallbackParams = {
   code: string
   state: string
 }
 
-type AuthorizationResult = {
+export type AuthorizationResult = {
   url: string
   redirectUri: string
   state: string
-  callback: () => Promise<ExchangeResult>
-}
-
-async function listen(server: Server) {
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(0, '127.0.0.1', () => resolve())
-  })
-}
-
-async function close(server: Server) {
-  if (!server.listening) return
-
-  await new Promise<void>((resolve, reject) => {
-    server.close((error) => {
-      if (error) {
-        reject(error)
-        return
-      }
-
-      resolve()
-    })
-  })
+  verifier: string
 }
 
 function generateState() {
@@ -69,20 +50,6 @@ function parseCallbackInput(input: string) {
   }
 
   return null
-}
-
-function successPage() {
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Authorization complete</title>
-  </head>
-  <body>
-    <h1>Authorization complete</h1>
-    <p>You can close this window and return to OpenCode.</p>
-  </body>
-</html>`
 }
 
 async function exchangeCode(
@@ -127,97 +94,17 @@ async function exchangeCode(
   }
 }
 
-async function createCallbackServer(expectedState: string) {
-  let settled = false
-  let cleanupTimer: ReturnType<typeof setTimeout> | undefined
-  let resolveResult: ((result: string) => void) | undefined
-  let rejectResult: ((error: Error) => void) | undefined
-
-  const server = createServer((req, res) => {
-    const requestUrl = new URL(
-      req.url ?? '/',
-      `http://${req.headers.host ?? 'localhost'}`,
-    )
-
-    if (requestUrl.pathname !== '/callback') {
-      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
-      res.end('Not found')
-      return
-    }
-
-    const code = requestUrl.searchParams.get('code')
-    const state = requestUrl.searchParams.get('state')
-
-    if (!code || !state) {
-      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' })
-      res.end('Missing code or state')
-      return
-    }
-
-    if (state !== expectedState) {
-      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' })
-      res.end('Invalid state')
-      if (!settled) {
-        settled = true
-        rejectResult?.(new Error('OAuth state mismatch'))
-      }
-      return
-    }
-
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-    res.end(successPage())
-
-    if (!settled) {
-      settled = true
-      resolveResult?.(requestUrl.toString())
-    }
-  })
-
-  const callbackUrl = new Promise<string>((resolve, reject) => {
-    resolveResult = resolve
-    rejectResult = reject
-  })
-
-  await listen(server)
-
-  cleanupTimer = setTimeout(() => {
-    if (settled) return
-    settled = true
-    rejectResult?.(new Error('Timed out waiting for OAuth callback'))
-  }, CALLBACK_TIMEOUT_MS)
-
-  const address = server.address()
-  if (!address || typeof address === 'string') {
-    clearTimeout(cleanupTimer)
-    await close(server)
-    throw new Error('Failed to allocate localhost redirect port')
-  }
-
-  return {
-    redirectUri: `http://localhost:${address.port}/callback`,
-    waitForCallback: async () => {
-      try {
-        return await callbackUrl
-      } finally {
-        if (cleanupTimer) clearTimeout(cleanupTimer)
-        await close(server)
-      }
-    },
-  }
-}
-
 export async function authorize(
   mode: 'max' | 'console',
 ): Promise<AuthorizationResult> {
   const pkce = await generatePKCE()
   const state = generateState()
-  const callbackServer = await createCallbackServer(state)
 
   const url = new URL(AUTHORIZE_URLS[mode], import.meta.url)
   url.searchParams.set('code', 'true')
   url.searchParams.set('client_id', CLIENT_ID)
   url.searchParams.set('response_type', 'code')
-  url.searchParams.set('redirect_uri', callbackServer.redirectUri)
+  url.searchParams.set('redirect_uri', CODE_CALLBACK_URL)
   url.searchParams.set('scope', OAUTH_SCOPES.join(' '))
   url.searchParams.set('code_challenge', pkce.challenge)
   url.searchParams.set('code_challenge_method', 'S256')
@@ -225,21 +112,9 @@ export async function authorize(
 
   return {
     url: url.toString(),
-    redirectUri: callbackServer.redirectUri,
+    redirectUri: CODE_CALLBACK_URL,
     state,
-    callback: async () => {
-      try {
-        const callbackUrl = await callbackServer.waitForCallback()
-        return await exchange(
-          callbackUrl,
-          pkce.verifier,
-          callbackServer.redirectUri,
-          state,
-        )
-      } catch {
-        return { type: 'failed' }
-      }
-    },
+    verifier: pkce.verifier,
   }
 }
 

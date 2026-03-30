@@ -5,6 +5,9 @@ export const AUTHORIZE_URLS = {
   max: 'https://claude.ai/oauth/authorize',
 } as const
 
+export const CODE_CALLBACK_URL =
+  'https://platform.claude.com/oauth/code/callback'
+
 export const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token'
 
 export const OAUTH_SCOPES = [

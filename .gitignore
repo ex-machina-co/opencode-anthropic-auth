@@ -3,3 +3,4 @@ dist/
 
 # for now...
 .opencode/
+.claude/

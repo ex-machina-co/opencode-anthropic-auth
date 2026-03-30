@@ -68,7 +68,7 @@ describe('auth.methods', () => {
     expect(plugin.auth.methods).toHaveLength(3)
   })
 
-  test('first method is Claude Pro/Max OAuth', async () => {
+  test('first method is Claude Pro/Max OAuth with code flow', async () => {
     const plugin = await getPlugin()
     const method = plugin.auth.methods[0]
     expect(method.label).toBe('Claude Pro/Max')
@@ -76,11 +76,12 @@ describe('auth.methods', () => {
     expect(method.authorize).toBeFunction()
   })
 
-  test('second method is Create an API Key OAuth', async () => {
+  test('second method is Create an API Key OAuth with code flow', async () => {
     const plugin = await getPlugin()
     const method = plugin.auth.methods[1]
     expect(method.label).toBe('Create an API Key')
     expect(method.type).toBe('oauth')
+    expect(method.authorize).toBeFunction()
   })
 
   test('third method is manual API key', async () => {

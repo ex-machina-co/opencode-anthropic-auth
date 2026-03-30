@@ -1,5 +1,5 @@
 import type { Plugin } from '@opencode-ai/plugin'
-import { authorize } from './auth'
+import { authorize, exchange } from './auth'
 import { CLIENT_ID, TOKEN_URL } from './constants'
 import {
   createStrippedStream,
@@ -158,9 +158,16 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
             const result = await authorize('max')
             return {
               url: result.url,
-              instructions: 'Complete authorization in the browser.',
-              method: 'auto',
-              callback: result.callback,
+              instructions: 'Paste the authorization code here:',
+              method: 'code',
+              callback: async (code: string) => {
+                return exchange(
+                  code,
+                  result.verifier,
+                  result.redirectUri,
+                  result.state,
+                )
+              },
             }
           },
         },
@@ -168,15 +175,20 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
           label: 'Create an API Key',
           type: 'oauth',
           authorize: async () => {
-            const auth = await authorize('console')
+            const result = await authorize('console')
             return {
-              url: auth.url,
-              instructions: 'Complete authorization in the browser.',
-              method: 'auto',
-              callback: async () => {
-                const credentials = await auth.callback()
+              url: result.url,
+              instructions: 'Paste the authorization code here:',
+              method: 'code',
+              callback: async (code: string) => {
+                const credentials = await exchange(
+                  code,
+                  result.verifier,
+                  result.redirectUri,
+                  result.state,
+                )
                 if (credentials.type === 'failed') return credentials
-                const result = await fetch(
+                const apiKey = await fetch(
                   `https://api.anthropic.com/api/oauth/claude_cli/create_api_key`,
                   {
                     method: 'POST',
@@ -186,7 +198,7 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
                     },
                   },
                 ).then((r) => r.json() as Promise<{ raw_key: string }>)
-                return { type: 'success' as const, key: result.raw_key }
+                return { type: 'success' as const, key: apiKey.raw_key }
               },
             }
           },
