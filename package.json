@@ -1,6 +1,6 @@
 {
   "name": "@ex-machina/opencode-anthropic-auth",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "repository": {
     "type": "git",
     "url": "https://github.com/ex-machina-co/opencode-anthropic-auth"
@@ -20,7 +20,7 @@
     "bump": "bun script/bump.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.7",
+    "@biomejs/biome": "2.4.10",
     "@opencode-ai/plugin": "1.3.13",
     "@tsconfig/bun": "1.0.10",
     "@types/bun": "1.3.10",
