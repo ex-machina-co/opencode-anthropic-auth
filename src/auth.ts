@@ -1,4 +1,3 @@
-import { generatePKCE } from '@openauthjs/openauth/pkce'
 import {
   AUTHORIZE_URLS,
   CLIENT_ID,
@@ -6,6 +5,7 @@ import {
   OAUTH_SCOPES,
   TOKEN_URL,
 } from './constants'
+import { generatePKCE } from './pkce'
 
 type CallbackParams = {
   code: string
