@@ -1,7 +1,9 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "rootDir": "./src",
     "outDir": "dist",
+    "types": ["bun-types"],
     "declaration": true,
     "noEmit": false,
     "allowImportingTsExtensions": false
