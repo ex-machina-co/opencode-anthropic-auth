@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { REQUIRED_BETAS } from '../constants'
 import {
   createStrippedStream,
@@ -218,6 +218,16 @@ describe('stripToolPrefix', () => {
 })
 
 describe('rewriteUrl', () => {
+  const originalEnv = process.env.ANTHROPIC_BASE_URL
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.ANTHROPIC_BASE_URL
+    } else {
+      process.env.ANTHROPIC_BASE_URL = originalEnv
+    }
+  })
+
   test('adds beta=true to /v1/messages URL string', () => {
     const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
     const url = new URL(input.toString())
@@ -251,6 +261,62 @@ describe('rewriteUrl', () => {
     const { input } = rewriteUrl(original)
     const url = new URL(input.toString())
     expect(url.searchParams.has('beta')).toBe(false)
+  })
+
+  test('overrides origin when ANTHROPIC_BASE_URL is set', () => {
+    process.env.ANTHROPIC_BASE_URL = 'http://localhost:8080'
+    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
+    const url = new URL(input.toString())
+    expect(url.origin).toBe('http://localhost:8080')
+    expect(url.pathname).toBe('/v1/messages')
+  })
+
+  test('preserves beta=true when ANTHROPIC_BASE_URL is set', () => {
+    process.env.ANTHROPIC_BASE_URL = 'http://localhost:8080'
+    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
+    const url = new URL(input.toString())
+    expect(url.searchParams.get('beta')).toBe('true')
+  })
+
+  test('preserves existing query params when ANTHROPIC_BASE_URL is set', () => {
+    process.env.ANTHROPIC_BASE_URL = 'http://localhost:8080'
+    const { input } = rewriteUrl(
+      'https://api.anthropic.com/v1/messages?foo=bar',
+    )
+    const url = new URL(input.toString())
+    expect(url.origin).toBe('http://localhost:8080')
+    expect(url.searchParams.get('foo')).toBe('bar')
+  })
+
+  test('handles ANTHROPIC_BASE_URL with trailing slash', () => {
+    process.env.ANTHROPIC_BASE_URL = 'http://localhost:8080/'
+    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
+    const url = new URL(input.toString())
+    expect(url.pathname).toBe('/v1/messages')
+    expect(url.origin).toBe('http://localhost:8080')
+  })
+
+  test('ignores invalid ANTHROPIC_BASE_URL', () => {
+    process.env.ANTHROPIC_BASE_URL = 'not-a-url'
+    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
+    const url = new URL(input.toString())
+    expect(url.origin).toBe('https://api.anthropic.com')
+  })
+
+  test('ignores empty ANTHROPIC_BASE_URL', () => {
+    process.env.ANTHROPIC_BASE_URL = ''
+    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
+    const url = new URL(input.toString())
+    expect(url.origin).toBe('https://api.anthropic.com')
+  })
+
+  test('overrides origin for Request input when ANTHROPIC_BASE_URL is set', () => {
+    process.env.ANTHROPIC_BASE_URL = 'http://localhost:8080'
+    const request = new Request('https://api.anthropic.com/v1/messages')
+    const { input } = rewriteUrl(request)
+    const url = new URL((input as Request).url)
+    expect(url.origin).toBe('http://localhost:8080')
+    expect(url.pathname).toBe('/v1/messages')
   })
 })
 

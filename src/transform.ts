@@ -125,7 +125,22 @@ export function stripToolPrefix(text: string): string {
 }
 
 /**
+ * Parse ANTHROPIC_BASE_URL from the environment.
+ * Returns a valid URL or null if unset/invalid.
+ */
+function resolveBaseUrl(): URL | null {
+  const raw = process.env.ANTHROPIC_BASE_URL?.trim()
+  if (!raw) return null
+  try {
+    return new URL(raw)
+  } catch {
+    return null
+  }
+}
+
+/**
  * Rewrite the request URL to add ?beta=true for /v1/messages requests.
+ * When ANTHROPIC_BASE_URL is set, also overrides the origin (protocol + host).
  * Returns the modified input and URL (if applicable).
  */
 export function rewriteUrl(input: FetchInput): {
@@ -143,20 +158,26 @@ export function rewriteUrl(input: FetchInput): {
     requestUrl = null
   }
 
+  if (!requestUrl) return { input, url: null }
+
+  const baseUrl = resolveBaseUrl()
+  if (baseUrl) {
+    requestUrl.protocol = baseUrl.protocol
+    requestUrl.host = baseUrl.host
+  }
+
   if (
-    requestUrl &&
     requestUrl.pathname === '/v1/messages' &&
     !requestUrl.searchParams.has('beta')
   ) {
     requestUrl.searchParams.set('beta', 'true')
-    const newInput =
-      input instanceof Request
-        ? new Request(requestUrl.toString(), input)
-        : requestUrl
-    return { input: newInput, url: requestUrl }
   }
 
-  return { input, url: requestUrl }
+  const newInput =
+    input instanceof Request
+      ? new Request(requestUrl.toString(), input)
+      : requestUrl
+  return { input: newInput, url: requestUrl }
 }
 
 /**
