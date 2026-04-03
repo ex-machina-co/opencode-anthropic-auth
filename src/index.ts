@@ -133,6 +133,8 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
                         throw error
                       }
                     }
+                    // Unreachable — each iteration either returns or throws.
+                    // Kept as a TypeScript exhaustiveness guard.
                     throw new Error('Token refresh exhausted all retries')
                   })().finally(() => {
                     refreshPromise = null
