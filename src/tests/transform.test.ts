@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { REQUIRED_BETAS } from '../constants'
 import {
   createStrippedStream,
+  isInsecure,
   mergeBetaHeaders,
   mergeHeaders,
   prefixToolNames,
@@ -310,6 +311,32 @@ describe('rewriteUrl', () => {
     expect(url.origin).toBe('https://api.anthropic.com')
   })
 
+  test('rejects file: scheme in ANTHROPIC_BASE_URL', () => {
+    process.env.ANTHROPIC_BASE_URL = 'file:///etc/passwd'
+    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
+    const url = new URL(input.toString())
+    expect(url.origin).toBe('https://api.anthropic.com')
+  })
+
+  test('rejects ANTHROPIC_BASE_URL with embedded credentials', () => {
+    process.env.ANTHROPIC_BASE_URL = 'http://user:pass@localhost:8080'
+    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
+    const url = new URL(input.toString())
+    expect(url.origin).toBe('https://api.anthropic.com')
+  })
+
+  test('returns original input when no URL changes are needed', () => {
+    const original = 'https://api.anthropic.com/v1/complete'
+    const { input } = rewriteUrl(original)
+    expect(input).toBe(original)
+  })
+
+  test('returns original Request when no URL changes are needed', () => {
+    const request = new Request('https://api.anthropic.com/v1/complete')
+    const { input } = rewriteUrl(request)
+    expect(input).toBe(request)
+  })
+
   test('overrides origin for Request input when ANTHROPIC_BASE_URL is set', () => {
     process.env.ANTHROPIC_BASE_URL = 'http://localhost:8080'
     const request = new Request('https://api.anthropic.com/v1/messages')
@@ -317,6 +344,60 @@ describe('rewriteUrl', () => {
     const url = new URL((input as Request).url)
     expect(url.origin).toBe('http://localhost:8080')
     expect(url.pathname).toBe('/v1/messages')
+  })
+})
+
+describe('isInsecure', () => {
+  const originalBaseUrl = process.env.ANTHROPIC_BASE_URL
+  const originalInsecure = process.env.ANTHROPIC_INSECURE
+
+  afterEach(() => {
+    if (originalBaseUrl === undefined) {
+      delete process.env.ANTHROPIC_BASE_URL
+    } else {
+      process.env.ANTHROPIC_BASE_URL = originalBaseUrl
+    }
+    if (originalInsecure === undefined) {
+      delete process.env.ANTHROPIC_INSECURE
+    } else {
+      process.env.ANTHROPIC_INSECURE = originalInsecure
+    }
+  })
+
+  test('returns false when neither env var is set', () => {
+    delete process.env.ANTHROPIC_BASE_URL
+    delete process.env.ANTHROPIC_INSECURE
+    expect(isInsecure()).toBe(false)
+  })
+
+  test('returns false when only ANTHROPIC_INSECURE is set (no base URL)', () => {
+    delete process.env.ANTHROPIC_BASE_URL
+    process.env.ANTHROPIC_INSECURE = '1'
+    expect(isInsecure()).toBe(false)
+  })
+
+  test('returns false when ANTHROPIC_BASE_URL is set but ANTHROPIC_INSECURE is not', () => {
+    process.env.ANTHROPIC_BASE_URL = 'https://proxy.local'
+    delete process.env.ANTHROPIC_INSECURE
+    expect(isInsecure()).toBe(false)
+  })
+
+  test('returns true when both are set and ANTHROPIC_INSECURE is "1"', () => {
+    process.env.ANTHROPIC_BASE_URL = 'https://proxy.local'
+    process.env.ANTHROPIC_INSECURE = '1'
+    expect(isInsecure()).toBe(true)
+  })
+
+  test('returns true when ANTHROPIC_INSECURE is "true"', () => {
+    process.env.ANTHROPIC_BASE_URL = 'https://proxy.local'
+    process.env.ANTHROPIC_INSECURE = 'true'
+    expect(isInsecure()).toBe(true)
+  })
+
+  test('returns false for other ANTHROPIC_INSECURE values', () => {
+    process.env.ANTHROPIC_BASE_URL = 'https://proxy.local'
+    process.env.ANTHROPIC_INSECURE = 'yes'
+    expect(isInsecure()).toBe(false)
   })
 })
 

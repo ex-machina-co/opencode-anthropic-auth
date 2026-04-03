@@ -125,14 +125,32 @@ export function stripToolPrefix(text: string): string {
 }
 
 /**
+ * Check if TLS verification should be skipped for custom API endpoints.
+ * Only effective when ANTHROPIC_BASE_URL is also set.
+ */
+export function isInsecure(): boolean {
+  if (!process.env.ANTHROPIC_BASE_URL?.trim()) return false
+  const raw = process.env.ANTHROPIC_INSECURE?.trim()
+  return raw === '1' || raw === 'true'
+}
+
+/**
  * Parse ANTHROPIC_BASE_URL from the environment.
- * Returns a valid URL or null if unset/invalid.
+ * Returns a valid HTTP(S) URL or null if unset/invalid.
  */
 function resolveBaseUrl(): URL | null {
   const raw = process.env.ANTHROPIC_BASE_URL?.trim()
   if (!raw) return null
   try {
-    return new URL(raw)
+    const baseUrl = new URL(raw)
+    if (
+      (baseUrl.protocol !== 'http:' && baseUrl.protocol !== 'https:') ||
+      baseUrl.username ||
+      baseUrl.password
+    ) {
+      return null
+    }
+    return baseUrl
   } catch {
     return null
   }
@@ -140,7 +158,8 @@ function resolveBaseUrl(): URL | null {
 
 /**
  * Rewrite the request URL to add ?beta=true for /v1/messages requests.
- * When ANTHROPIC_BASE_URL is set, also overrides the origin (protocol + host).
+ * When ANTHROPIC_BASE_URL is set, overrides the origin (protocol + host)
+ * for all API requests flowing through the fetch wrapper.
  * Returns the modified input and URL (if applicable).
  */
 export function rewriteUrl(input: FetchInput): {
@@ -160,6 +179,8 @@ export function rewriteUrl(input: FetchInput): {
 
   if (!requestUrl) return { input, url: null }
 
+  const originalHref = requestUrl.href
+
   const baseUrl = resolveBaseUrl()
   if (baseUrl) {
     requestUrl.protocol = baseUrl.protocol
@@ -171,6 +192,10 @@ export function rewriteUrl(input: FetchInput): {
     !requestUrl.searchParams.has('beta')
   ) {
     requestUrl.searchParams.set('beta', 'true')
+  }
+
+  if (requestUrl.href === originalHref) {
+    return { input, url: requestUrl }
   }
 
   const newInput =

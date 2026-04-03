@@ -3,6 +3,7 @@ import { authorize, exchange } from './auth'
 import { CLIENT_ID, TOKEN_URL } from './constants'
 import {
   createStrippedStream,
+  isInsecure,
   mergeHeaders,
   prefixToolNames,
   rewriteUrl,
@@ -141,7 +142,9 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
                 ...init,
                 body,
                 headers: requestHeaders,
-              })
+                // biome-ignore lint/suspicious/noExplicitAny: tls option is Bun-specific, not in standard RequestInit
+                ...(isInsecure() && { tls: { rejectUnauthorized: false } }),
+              } as any)
 
               return createStrippedStream(response)
             },
