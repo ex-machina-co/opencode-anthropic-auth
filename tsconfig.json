@@ -1,6 +1,7 @@
 {
   "extends": "@tsconfig/bun/tsconfig.json",
   "compilerOptions": {
+    "types": ["bun-types"],
     "noEmit": true
   },
   "include": ["src/**/*.ts", "script/**/*.ts"],
