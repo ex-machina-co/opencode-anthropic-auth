@@ -2,12 +2,6 @@
 
 An [OpenCode](https://github.com/anomalyco/opencode) plugin that provides Anthropic OAuth authentication, enabling Claude Pro/Max users to use their subscription directly with OpenCode.
 
-<details>
-  <summary>This solves the ".opencode" -> ".Claude" issues too!</summary>
-
-  ![renaming.jpg](images/renaming.jpg)
-</details>
-
 ## Usage
 
 Add the plugin to your OpenCode configuration:
@@ -40,14 +34,13 @@ For Claude Pro/Max authentication, the plugin:
 
 ### Publishing
 
-Bump the version and push to `main` -- CI will publish to npm automatically:
+This project uses [changesets](https://github.com/changesets/changesets) for versioning and publishing. See the [changeset README](.changeset/README.md) for more details.
 
 ```bash
-bun bump            # patch bump (0.0.13 -> 0.0.14)
-bun bump minor      # minor bump (0.0.13 -> 0.1.0)
-bun bump major      # major bump (0.0.13 -> 1.0.0)
-bun bump -- --dry-run  # preview without changes
+bun change          # create a changeset describing your changes
 ```
+
+When changesets are merged to `main`, CI will automatically open a release PR. Merging that PR publishes to npm.
 
 ## License
 

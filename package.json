@@ -17,8 +17,8 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",
-    "changeset": "changeset",
-    "release": "bun run build && changeset publish"
+    "change": "changeset",
+    "release": "bun run build && bun change publish"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.10",
