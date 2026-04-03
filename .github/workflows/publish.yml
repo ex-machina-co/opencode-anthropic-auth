@@ -5,14 +5,17 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+concurrency:
+  group: publish
 
 jobs:
   publish:
+    if: github.repository == 'ex-machina-co/opencode-anthropic-auth'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
