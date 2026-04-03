@@ -404,6 +404,265 @@ describe('auth.loader', () => {
     expect(text).not.toContain('mcp_bash')
   })
 
+  test('concurrent expired token refresh should deduplicate to a single token request', async () => {
+    let tokenRefreshCount = 0
+
+    globalThis.setTimeout = mock((handler: TimerHandler) => {
+      if (typeof handler === 'function') handler()
+      return 0 as ReturnType<typeof setTimeout>
+    }) as typeof setTimeout
+
+    globalThis.fetch = mock((input: any, init: any) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url
+
+      if (url.includes('/v1/oauth/token')) {
+        tokenRefreshCount++
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              refresh_token: 'new-refresh',
+              access_token: 'new-access',
+              expires_in: 3600,
+            }),
+            { status: 200 },
+          ),
+        )
+      }
+
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const mockClient = createMockClient()
+    const plugin = await getPlugin(mockClient)
+    const result = await plugin.auth.loader(
+      () =>
+        Promise.resolve({
+          type: 'oauth',
+          access: 'expired-token',
+          refresh: 'old-refresh',
+          expires: Date.now() - 1000,
+        }),
+      { models: {} },
+    )
+
+    // Fire 5 concurrent requests, all with expired token
+    await Promise.all([
+      result.fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        body: '{}',
+      }),
+      result.fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        body: '{}',
+      }),
+      result.fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        body: '{}',
+      }),
+      result.fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        body: '{}',
+      }),
+      result.fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        body: '{}',
+      }),
+    ])
+
+    // With deduplication, only ONE refresh request should be made, not 5
+    expect(tokenRefreshCount).toBe(1)
+  })
+
+  test('concurrent refresh with token rotation should not cause cascading failures', async () => {
+    const usedRefreshTokens = new Set<string>()
+
+    globalThis.setTimeout = mock((handler: TimerHandler) => {
+      if (typeof handler === 'function') handler()
+      return 0 as ReturnType<typeof setTimeout>
+    }) as typeof setTimeout
+
+    globalThis.fetch = mock((input: any, init: any) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url
+
+      if (url.includes('/v1/oauth/token')) {
+        const body = JSON.parse(init?.body)
+        const refreshToken = body.refresh_token
+
+        // Simulate refresh token rotation: first use succeeds, subsequent uses
+        // return 401 because the old token has been invalidated
+        if (usedRefreshTokens.has(refreshToken)) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ error: 'invalid_grant' }), {
+              status: 401,
+            }),
+          )
+        }
+
+        usedRefreshTokens.add(refreshToken)
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              refresh_token: 'rotated-refresh',
+              access_token: 'new-access',
+              expires_in: 3600,
+            }),
+            { status: 200 },
+          ),
+        )
+      }
+
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const mockClient = createMockClient()
+    const plugin = await getPlugin(mockClient)
+    const result = await plugin.auth.loader(
+      () =>
+        Promise.resolve({
+          type: 'oauth',
+          access: 'expired-token',
+          refresh: 'old-refresh',
+          expires: Date.now() - 1000,
+        }),
+      { models: {} },
+    )
+
+    // Fire 5 concurrent requests — ALL should succeed because only one refresh
+    // fires and the rest reuse its result
+    const outcomes = await Promise.all([
+      result
+        .fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          body: '{}',
+        })
+        .then(
+          () => 'ok' as const,
+          () => 'fail' as const,
+        ),
+      result
+        .fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          body: '{}',
+        })
+        .then(
+          () => 'ok' as const,
+          () => 'fail' as const,
+        ),
+      result
+        .fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          body: '{}',
+        })
+        .then(
+          () => 'ok' as const,
+          () => 'fail' as const,
+        ),
+      result
+        .fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          body: '{}',
+        })
+        .then(
+          () => 'ok' as const,
+          () => 'fail' as const,
+        ),
+      result
+        .fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          body: '{}',
+        })
+        .then(
+          () => 'ok' as const,
+          () => 'fail' as const,
+        ),
+    ])
+
+    // With deduplication, all callers share the single successful refresh.
+    // Without it, 4 out of 5 get 401 from the rotated-away token → cascading failures.
+    expect(outcomes).toEqual(['ok', 'ok', 'ok', 'ok', 'ok'])
+  })
+
+  test('concurrent refresh should persist tokens exactly once', async () => {
+    globalThis.setTimeout = mock((handler: TimerHandler) => {
+      if (typeof handler === 'function') handler()
+      return 0 as ReturnType<typeof setTimeout>
+    }) as typeof setTimeout
+
+    globalThis.fetch = mock((input: any) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url
+
+      if (url.includes('/v1/oauth/token')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              refresh_token: 'new-refresh',
+              access_token: 'new-access',
+              expires_in: 3600,
+            }),
+            { status: 200 },
+          ),
+        )
+      }
+
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const mockClient = createMockClient()
+    const plugin = await getPlugin(mockClient)
+    const result = await plugin.auth.loader(
+      () =>
+        Promise.resolve({
+          type: 'oauth',
+          access: 'expired-token',
+          refresh: 'old-refresh',
+          expires: Date.now() - 1000,
+        }),
+      { models: {} },
+    )
+
+    await Promise.all([
+      result.fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        body: '{}',
+      }),
+      result.fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        body: '{}',
+      }),
+      result.fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        body: '{}',
+      }),
+      result.fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        body: '{}',
+      }),
+      result.fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        body: '{}',
+      }),
+    ])
+
+    // With deduplication, client.auth.set should be called exactly once.
+    // Without it, each concurrent refresh calls auth.set independently → 5 calls.
+    expect(mockClient.auth.set).toHaveBeenCalledTimes(1)
+  })
+
   test('fetch wrapper adds beta=true to /v1/messages URL', async () => {
     let capturedUrl: string | undefined
 
