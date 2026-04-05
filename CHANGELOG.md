@@ -1,5 +1,11 @@
 # @ex-machina/opencode-anthropic-auth
 
+## 1.1.0
+
+### Minor Changes
+
+- [#42](https://github.com/ex-machina-co/opencode-anthropic-auth/pull/42) [`feec332`](https://github.com/ex-machina-co/opencode-anthropic-auth/commit/feec3328afd0c9fcc5b708f5d2b11337e6844242) Thanks [@Thesam1798](https://github.com/Thesam1798)! - feat: support ANTHROPIC_BASE_URL env var for custom API endpoint
+
 ## 1.0.4
 
 ### Patch Changes
