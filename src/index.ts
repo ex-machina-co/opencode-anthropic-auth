@@ -47,84 +47,101 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
               },
             }
           }
+
+          // Shared inflight refresh promise — prevents concurrent token refreshes
+          // from racing against each other (and causing 401 cascades with token rotation)
+          let refreshPromise: Promise<string> | null = null
+
           return {
             apiKey: '',
             async fetch(input: string | URL | Request, init?: RequestInit) {
               const auth = await getAuth()
               if (auth.type !== 'oauth') return fetch(input, init)
               if (!auth.access || !auth.expires || auth.expires < Date.now()) {
-                const maxRetries = 2
-                const baseDelayMs = 500
+                if (!refreshPromise) {
+                  refreshPromise = (async () => {
+                    const maxRetries = 2
+                    const baseDelayMs = 500
 
-                for (let attempt = 0; attempt <= maxRetries; attempt++) {
-                  try {
-                    if (attempt > 0) {
-                      const delay = baseDelayMs * 2 ** (attempt - 1)
-                      await new Promise((resolve) => setTimeout(resolve, delay))
-                    }
+                    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                      try {
+                        if (attempt > 0) {
+                          const delay = baseDelayMs * 2 ** (attempt - 1)
+                          await new Promise((resolve) =>
+                            setTimeout(resolve, delay),
+                          )
+                        }
 
-                    const response = await fetch(TOKEN_URL, {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        Accept: 'application/json, text/plain, */*',
-                        'User-Agent': 'axios/1.13.6',
-                      },
-                      body: JSON.stringify({
-                        grant_type: 'refresh_token',
-                        refresh_token: auth.refresh,
-                        client_id: CLIENT_ID,
-                      }),
-                    })
+                        const response = await fetch(TOKEN_URL, {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Accept: 'application/json, text/plain, */*',
+                            'User-Agent': 'axios/1.13.6',
+                          },
+                          body: JSON.stringify({
+                            grant_type: 'refresh_token',
+                            refresh_token: auth.refresh,
+                            client_id: CLIENT_ID,
+                          }),
+                        })
 
-                    if (!response.ok) {
-                      if (response.status >= 500 && attempt < maxRetries) {
-                        await response.body?.cancel()
-                        continue
+                        if (!response.ok) {
+                          if (response.status >= 500 && attempt < maxRetries) {
+                            await response.body?.cancel()
+                            continue
+                          }
+
+                          throw new Error(
+                            `Token refresh failed: ${response.status}`,
+                          )
+                        }
+
+                        const json = (await response.json()) as {
+                          refresh_token: string
+                          access_token: string
+                          expires_in: number
+                        }
+
+                        // biome-ignore lint/suspicious/noExplicitAny: SDK types don't expose auth.set
+                        await (client as any).auth.set({
+                          path: {
+                            id: 'anthropic',
+                          },
+                          body: {
+                            type: 'oauth',
+                            refresh: json.refresh_token,
+                            access: json.access_token,
+                            expires: Date.now() + json.expires_in * 1000,
+                          },
+                        })
+
+                        return json.access_token
+                      } catch (error) {
+                        const isNetworkError =
+                          error instanceof Error &&
+                          (error.message.includes('fetch failed') ||
+                            ('code' in error &&
+                              (error.code === 'ECONNRESET' ||
+                                error.code === 'ECONNREFUSED' ||
+                                error.code === 'ETIMEDOUT' ||
+                                error.code === 'UND_ERR_CONNECT_TIMEOUT')))
+
+                        if (attempt < maxRetries && isNetworkError) {
+                          continue
+                        }
+
+                        throw error
                       }
-
-                      throw new Error(
-                        `Token refresh failed: ${response.status}`,
-                      )
                     }
-
-                    const json = (await response.json()) as {
-                      refresh_token: string
-                      access_token: string
-                      expires_in: number
-                    }
-
-                    // biome-ignore lint/suspicious/noExplicitAny: SDK types don't expose auth.set
-                    await (client as any).auth.set({
-                      path: {
-                        id: 'anthropic',
-                      },
-                      body: {
-                        type: 'oauth',
-                        refresh: json.refresh_token,
-                        access: json.access_token,
-                        expires: Date.now() + json.expires_in * 1000,
-                      },
-                    })
-                    auth.access = json.access_token
-                    break
-                  } catch (error) {
-                    const isNetworkError =
-                      error instanceof Error &&
-                      (error.message.includes('fetch failed') ||
-                        ('code' in error &&
-                          (error.code === 'ECONNRESET' ||
-                            error.code === 'ECONNREFUSED' ||
-                            error.code === 'ETIMEDOUT' ||
-                            error.code === 'UND_ERR_CONNECT_TIMEOUT')))
-
-                    if (attempt < maxRetries && isNetworkError) {
-                      continue
-                    }
-
-                    throw error
-                  }
+                    // Unreachable — each iteration either returns or throws.
+                    // Kept as a TypeScript exhaustiveness guard.
+                    throw new Error('Token refresh exhausted all retries')
+                  })().finally(() => {
+                    refreshPromise = null
+                  })
                 }
+                auth.access = await refreshPromise
               }
 
               const requestHeaders = mergeHeaders(input, init)
