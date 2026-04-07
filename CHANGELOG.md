@@ -1,5 +1,11 @@
 # @ex-machina/opencode-anthropic-auth
 
+## 1.1.1
+
+### Patch Changes
+
+- [#47](https://github.com/ex-machina-co/opencode-anthropic-auth/pull/47) [`c0fbbcf`](https://github.com/ex-machina-co/opencode-anthropic-auth/commit/c0fbbcf6cdcf6c2879604e0b8e609cbdf8fddead) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Minor bump to update README in npm with security suggestion
+
 ## 1.1.0
 
 ### Minor Changes
