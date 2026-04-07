@@ -24,6 +24,8 @@ Add the plugin to your OpenCode configuration:
   "plugin": ["@ex-machina/opencode-anthropic-auth@1.1.0"]
 }
 
+## Authentication Methods
+
 The plugin provides three authentication options:
 
 - **Claude Pro/Max** - OAuth flow via `claude.ai` for Pro/Max subscribers. Uses your existing subscription at no additional API cost.
