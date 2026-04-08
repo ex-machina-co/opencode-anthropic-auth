@@ -14,7 +14,7 @@
     "prepare": "tsc -p tsconfig.build.json",
     "build": "tsc -p tsconfig.build.json",
     "dev": "bun scripts/dev.ts",
-    "dev:clean": "rm -f .opencode/plugins/anthropic-auth.js && echo 'Symlink removed'",
+    "dev:clean": "bun scripts/dev-clean.ts",
     "test": "bun test",
     "types": "tsc",
     "format": "biome format --write .",
