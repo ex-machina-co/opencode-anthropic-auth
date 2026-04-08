@@ -45,6 +45,31 @@ For Claude Pro/Max authentication, the plugin:
 
 ## Development
 
+### Local Testing
+
+Use `bun run dev` to test plugin changes locally without publishing to npm:
+
+```bash
+bun run dev
+```
+
+This does three things:
+
+1. Builds the plugin
+2. Symlinks the build output into `.opencode/plugins/` so OpenCode loads it as a local plugin
+3. Starts `tsc --watch` for automatic rebuilds on source changes
+
+After starting the dev script, restart OpenCode in this project directory to pick up the local build. Any edits to `src/` will trigger a rebuild — restart OpenCode again to load the new version.
+
+Ctrl+C stops the watcher and cleans up the symlink. If the process was killed without cleanup (e.g. `kill -9`), you can manually remove the symlink:
+
+```bash
+bun run dev:clean
+```
+
+> [!NOTE]
+> If you have the npm version of this plugin in your global OpenCode config, both will load. The local version takes precedence for auth handling.
+
 ### Publishing
 
 This project uses [changesets](https://github.com/changesets/changesets) for versioning and publishing. See the [changeset README](.changeset/README.md) for more details.
