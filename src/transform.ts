@@ -2,6 +2,17 @@ import { REQUIRED_BETAS, TOOL_PREFIX, USER_AGENT } from './constants'
 
 export type FetchInput = string | URL | Request
 
+const SYSTEM_PROMPT_STRIP_PATTERNS = [
+  /\n\nWhen the user directly asks about OpenCode[\s\S]*?https:\/\/opencode\.ai\/docs\n*/g,
+  /https?:\/\/(?:www\.)?opencode\.ai\/docs\S*/g,
+]
+
+const TASK_TOOL_DIRECTIVE_PATTERN =
+  /- VERY IMPORTANT: When exploring the codebase to gather context or to answer a question that is not a needle query for a specific file\/class\/function, it is CRITICAL that you use the Task tool instead of running search commands directly\./g
+
+const SAFE_TASK_TOOL_DIRECTIVE =
+  '- When exploring the codebase to gather context or to answer a question that is not a needle query for a specific file/class/function, use the Task tool instead of running search commands directly.'
+
 /**
  * Merge headers from a Request object and/or a RequestInit headers value
  * into a single Headers instance.
@@ -38,6 +49,17 @@ export function mergeHeaders(input: FetchInput, init?: RequestInit): Headers {
   }
 
   return headers
+}
+
+export function sanitizeSystemPrompt(text: string): string {
+  let sanitized = text.replace(
+    TASK_TOOL_DIRECTIVE_PATTERN,
+    SAFE_TASK_TOOL_DIRECTIVE,
+  )
+  for (const pattern of SYSTEM_PROMPT_STRIP_PATTERNS) {
+    sanitized = sanitized.replace(pattern, '')
+  }
+  return sanitized.trim()
 }
 
 /**

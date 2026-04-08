@@ -60,6 +60,34 @@ describe('experimental.chat.system.transform', () => {
     expect(output.system[0]).toBe(PREFIX)
     expect(output.system).toHaveLength(1)
   })
+
+  test('strips OpenCode docs markers and rewrites Task tool directive', async () => {
+    const plugin = await getPlugin()
+    const hook = plugin['experimental.chat.system.transform']
+    const output = {
+      system: [
+        [
+          'You are an interactive CLI tool that helps users with software engineering tasks.',
+          'When the user directly asks about OpenCode (eg. "can OpenCode do..."), use the WebFetch tool to gather information to answer the question from OpenCode docs. The list of available docs is available at https://opencode.ai/docs',
+          '# Tool usage policy',
+          '- VERY IMPORTANT: When exploring the codebase to gather context or to answer a question that is not a needle query for a specific file/class/function, it is CRITICAL that you use the Task tool instead of running search commands directly.',
+          'Keep this instruction.',
+        ].join('\n\n'),
+      ],
+    }
+
+    hook({ model: { providerID: 'anthropic' } }, output)
+
+    expect(output.system[1]).toContain('You are an interactive CLI tool')
+    expect(output.system[1]).toContain('Keep this instruction.')
+    expect(output.system[1]).not.toContain('https://opencode.ai/docs')
+    expect(output.system[1]).toContain(
+      'use the Task tool instead of running search commands directly.',
+    )
+    expect(output.system[1]).not.toContain(
+      'it is CRITICAL that you use the Task tool instead of running search commands directly.',
+    )
+  })
 })
 
 describe('auth.methods', () => {

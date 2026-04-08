@@ -7,6 +7,7 @@ import {
   mergeHeaders,
   prefixToolNames,
   rewriteUrl,
+  sanitizeSystemPrompt,
   setOAuthHeaders,
 } from './transform'
 
@@ -18,6 +19,7 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
     ) => {
       const prefix = "You are Claude Code, Anthropic's official CLI for Claude."
       if (input.model?.providerID === 'anthropic') {
+        output.system = output.system.map(sanitizeSystemPrompt).filter(Boolean)
         output.system.unshift(prefix)
         if (output.system[1])
           output.system[1] = `${prefix}\n\n${output.system[1]}`
