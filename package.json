@@ -13,6 +13,7 @@
   "scripts": {
     "prepare": "tsc -p tsconfig.build.json",
     "build": "tsc -p tsconfig.build.json",
+    "dev": "bun scripts/dev.ts",
     "test": "bun test",
     "types": "tsc",
     "format": "biome format --write .",
