@@ -1,4 +1,4 @@
-import { REQUIRED_BETAS, TOOL_PREFIX } from './constants'
+import { REQUIRED_BETAS, TOOL_PREFIX, USER_AGENT } from './constants'
 
 export type FetchInput = string | URL | Request
 
@@ -63,7 +63,7 @@ export function setOAuthHeaders(
 ): Headers {
   headers.set('authorization', `Bearer ${accessToken}`)
   headers.set('anthropic-beta', mergeBetaHeaders(headers))
-  headers.set('user-agent', 'claude-cli/2.1.2 (external, cli)')
+  headers.set('user-agent', USER_AGENT)
   headers.delete('x-api-key')
   return headers
 }

@@ -25,3 +25,5 @@ export const REQUIRED_BETAS = [
   'oauth-2025-04-20',
   'interleaved-thinking-2025-05-14',
 ]
+
+export const USER_AGENT = 'claude-cli/2.1.2 (external, cli)'

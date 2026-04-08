@@ -92,8 +92,9 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
                             continue
                           }
 
+                          const body = await response.text().catch(() => '')
                           throw new Error(
-                            `Token refresh failed: ${response.status}`,
+                            `Token refresh failed: ${response.status} — ${body}`,
                           )
                         }
 

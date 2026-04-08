@@ -11,6 +11,7 @@
     "dist"
   ],
   "scripts": {
+    "prepare": "tsc -p tsconfig.build.json",
     "build": "tsc -p tsconfig.build.json",
     "test": "bun test",
     "types": "tsc",
