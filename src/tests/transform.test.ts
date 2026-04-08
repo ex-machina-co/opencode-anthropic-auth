@@ -5,9 +5,7 @@ import {
   REQUIRED_BETAS,
 } from '../constants'
 import {
-  computeCCH,
   createStrippedStream,
-  extractFirstUserMessage,
   isInsecure,
   mergeBetaHeaders,
   mergeHeaders,
@@ -463,115 +461,6 @@ describe('createStrippedStream', () => {
   })
 })
 
-describe('computeCCH', () => {
-  test('produces deterministic 3-char hex hash', () => {
-    const hash = computeCCH('hello world test message', '2.1.2')
-    expect(hash).toHaveLength(3)
-    expect(hash).toMatch(/^[a-f0-9]{3}$/)
-    // Same input should produce same output
-    expect(computeCCH('hello world test message', '2.1.2')).toBe(hash)
-  })
-
-  test('different messages produce different hashes', () => {
-    const hash1 = computeCCH('hello world test message', '2.1.2')
-    const hash2 = computeCCH('different text entirely', '2.1.2')
-    expect(hash1).not.toBe(hash2)
-  })
-
-  test('different versions produce different hashes', () => {
-    const hash1 = computeCCH('hello world test message', '2.1.2')
-    const hash2 = computeCCH('hello world test message', '2.2.0')
-    expect(hash1).not.toBe(hash2)
-  })
-
-  test('falls back to random hash for empty message', () => {
-    const hash = computeCCH('', '2.1.2')
-    expect(hash).toHaveLength(3)
-    expect(hash).toMatch(/^[a-f0-9]{3}$/)
-  })
-
-  test('random fallback produces different values each call', () => {
-    const hashes = new Set(
-      Array.from({ length: 20 }, () => computeCCH('', '2.1.2')),
-    )
-    // With 20 random 3-hex-char values, extremely unlikely to all be identical
-    expect(hashes.size).toBeGreaterThan(1)
-  })
-
-  test('handles message shorter than max position (20)', () => {
-    const hash = computeCCH('hi', '2.1.2')
-    expect(hash).toHaveLength(3)
-    expect(hash).toMatch(/^[a-f0-9]{3}$/)
-    // Should be deterministic — short chars replaced with '0'
-    expect(computeCCH('hi', '2.1.2')).toBe(hash)
-  })
-
-  test('uses characters at positions 4, 7, 20 from message', () => {
-    // Position:  0123456789...
-    // Message:   abcdeXfgYhijklmnopqrstUvw
-    //                 ^4  ^7              ^20 (0-indexed)
-    // Chars at 4='e', 7='Y' — but position 20 depends on length
-    const msg = 'abcdeXfgYhijklmnopqrstUvw'
-    const hash1 = computeCCH(msg, '2.1.2')
-    // Change char at position 4
-    const msg2 = 'abcdZXfgYhijklmnopqrstUvw'
-    const hash2 = computeCCH(msg2, '2.1.2')
-    expect(hash1).not.toBe(hash2)
-  })
-})
-
-describe('extractFirstUserMessage', () => {
-  test('extracts string content from first user message', () => {
-    const messages = [
-      { role: 'system', content: 'system prompt' },
-      { role: 'user', content: 'hello world' },
-    ]
-    expect(extractFirstUserMessage(messages)).toBe('hello world')
-  })
-
-  test('extracts text block from array content', () => {
-    const messages = [
-      {
-        role: 'user',
-        content: [
-          { type: 'image', source: {} },
-          { type: 'text', text: 'describe this image' },
-        ],
-      },
-    ]
-    expect(extractFirstUserMessage(messages)).toBe('describe this image')
-  })
-
-  test('returns empty string when no user message', () => {
-    const messages = [{ role: 'assistant', content: 'hi' }]
-    expect(extractFirstUserMessage(messages)).toBe('')
-  })
-
-  test('returns empty string for non-array input', () => {
-    expect(extractFirstUserMessage('not an array' as any)).toBe('')
-  })
-
-  test('skips assistant messages to find first user', () => {
-    const messages = [
-      { role: 'assistant', content: 'I can help' },
-      { role: 'assistant', content: 'with that' },
-      { role: 'user', content: 'actual user message' },
-    ]
-    expect(extractFirstUserMessage(messages)).toBe('actual user message')
-  })
-
-  test('returns empty string when content has no text block', () => {
-    const messages = [
-      { role: 'user', content: [{ type: 'image', source: {} }] },
-    ]
-    expect(extractFirstUserMessage(messages)).toBe('')
-  })
-
-  test('returns empty string for empty messages array', () => {
-    expect(extractFirstUserMessage([])).toBe('')
-  })
-})
-
 describe('sanitizeSystemText', () => {
   const SYSTEM_WITH_OPENCODE = `${OPENCODE_IDENTITY}\n\nSome OpenCode specific instructions\n\n# Code References\n\nActual content here`
 
@@ -587,9 +476,9 @@ describe('sanitizeSystemText', () => {
     expect(sanitizeSystemText(text)).toBe(text)
   })
 
-  test('calls onError when Code References marker is missing', () => {
+  test('calls onError when no preserved tail marker is found', () => {
     const onError = mock(() => {})
-    const text = `${OPENCODE_IDENTITY}\n\nSome instructions without marker`
+    const text = `${OPENCODE_IDENTITY}\n\nSome instructions without any marker`
     const result = sanitizeSystemText(text, onError)
     expect(result).toBe(text) // unchanged
     expect(onError).toHaveBeenCalledTimes(1)
@@ -614,6 +503,55 @@ describe('sanitizeSystemText', () => {
     expect(result).toBe(
       `# Code References\nmiddle\n${OPENCODE_IDENTITY}\nsecond`,
     )
+  })
+
+  test('preserves user instructions from config', () => {
+    const text = [
+      OPENCODE_IDENTITY,
+      '',
+      'Some OpenCode specific stuff',
+      'Instructions from: /home/user/.config/opencode/preamble.md',
+      'My custom instructions here',
+      '# Code References',
+      'file contents',
+    ].join('\n')
+    const result = sanitizeSystemText(text)
+    expect(result).not.toContain(OPENCODE_IDENTITY)
+    expect(result).not.toContain('OpenCode specific stuff')
+    expect(result).toContain(
+      'Instructions from: /home/user/.config/opencode/preamble.md',
+    )
+    expect(result).toContain('My custom instructions here')
+    expect(result).toContain('# Code References')
+  })
+
+  test('preserves instructions from command', () => {
+    const text = [
+      OPENCODE_IDENTITY,
+      '',
+      'OpenCode stuff',
+      'Instructions from command: my-script',
+      'Command output here',
+      '# Code References',
+    ].join('\n')
+    const result = sanitizeSystemText(text)
+    expect(result).toContain('Instructions from command: my-script')
+    expect(result).toContain('Command output here')
+  })
+
+  test('picks earliest preserved marker', () => {
+    const text = [
+      OPENCODE_IDENTITY,
+      'OpenCode stuff',
+      'Instructions from: preamble.md',
+      'user content',
+      '# Code References',
+      'files',
+    ].join('\n')
+    const result = sanitizeSystemText(text)
+    // Should cut at "Instructions from:" since it comes before "# Code References"
+    expect(result).toContain('Instructions from: preamble.md')
+    expect(result).toContain('user content')
   })
 })
 
@@ -672,15 +610,6 @@ describe('rewriteRequestBody', () => {
     const result = JSON.parse(rewriteRequestBody(body))
     expect(result.tools[0].name).toBe('mcp_bash')
     expect(result.system[0].text).toContain(CLAUDE_CODE_IDENTITY)
-    expect(result.system[0].text).toMatch(/cc_version=[\d.]+\.[a-f0-9]{3}/)
-  })
-
-  test('injects CCH hash into identity block', () => {
-    const body = JSON.stringify({
-      messages: [{ role: 'user', content: 'test content here for hashing' }],
-    })
-    const result = JSON.parse(rewriteRequestBody(body))
-    expect(result.system[0].text).toMatch(/cc_version=2\.1\.2\.[a-f0-9]{3}/)
   })
 
   test('handles missing system field', () => {
@@ -746,7 +675,6 @@ describe('rewriteRequestBody', () => {
 
     // System: identity prepended, OpenCode section removed
     expect(result.system[0].text).toContain(CLAUDE_CODE_IDENTITY)
-    expect(result.system[0].text).toMatch(/cc_version=/)
     expect(result.system[1].text).toContain('# Code References')
     expect(result.system[1].text).not.toContain(OPENCODE_IDENTITY)
     expect(result.system[1].text).not.toContain('You have access to tools')
@@ -762,33 +690,6 @@ describe('rewriteRequestBody', () => {
     expect(result.messages[1].content[1].text).toBe('Let me check')
     // User messages untouched
     expect(result.messages[0].content).toBe('Help me fix this bug in main.ts')
-  })
-
-  test('CCH hash is deterministic for same message', () => {
-    const body = JSON.stringify({
-      messages: [{ role: 'user', content: 'consistent message content' }],
-    })
-    const result1 = JSON.parse(rewriteRequestBody(body))
-    const result2 = JSON.parse(rewriteRequestBody(body))
-    expect(result1.system[0].text).toBe(result2.system[0].text)
-  })
-
-  test('CCH hash differs for different messages', () => {
-    const body1 = JSON.stringify({
-      messages: [{ role: 'user', content: 'first message here' }],
-    })
-    const body2 = JSON.stringify({
-      messages: [{ role: 'user', content: 'different message' }],
-    })
-    const result1 = JSON.parse(rewriteRequestBody(body1))
-    const result2 = JSON.parse(rewriteRequestBody(body2))
-    const hash1 = result1.system[0].text.match(
-      /cc_version=[\d.]+\.([a-f0-9]{3})/,
-    )?.[1]
-    const hash2 = result2.system[0].text.match(
-      /cc_version=[\d.]+\.([a-f0-9]{3})/,
-    )?.[1]
-    expect(hash1).not.toBe(hash2)
   })
 
   test('handles body with no messages array', () => {

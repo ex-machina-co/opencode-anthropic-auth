@@ -1,12 +1,10 @@
-import { createHash, randomBytes } from 'node:crypto'
 import {
-  CCH_POSITIONS,
-  CCH_SALT,
   CLAUDE_CODE_IDENTITY,
-  CLAUDE_CODE_VERSION,
   OPENCODE_IDENTITY,
+  PRESERVED_TAIL_MARKERS,
   REQUIRED_BETAS,
-  TOOL_PREFIX, USER_AGENT,
+  TOOL_PREFIX,
+  USER_AGENT,
 } from './constants'
 
 export type FetchInput = string | URL | Request
@@ -215,48 +213,10 @@ export function rewriteUrl(input: FetchInput): {
 }
 
 /**
- * Compute a 3-character content-binding hash (CCH) from the first user message.
- * Algorithm reverse-engineered from Claude Code CLI.
- */
-export function computeCCH(
-  firstUserMessageText: string,
-  version: string,
-): string {
-  if (!firstUserMessageText) {
-    return randomBytes(2).toString('hex').slice(0, 3)
-  }
-  const chars = CCH_POSITIONS.map((i) => firstUserMessageText[i] || '0').join(
-    '',
-  )
-  return createHash('sha256')
-    .update(`${CCH_SALT}${chars}${version}`)
-    .digest('hex')
-    .slice(0, 3)
-}
-
-/**
- * Extract text from the first user message in an API messages array.
- */
-export function extractFirstUserMessage(messages: unknown[]): string {
-  if (!Array.isArray(messages)) return ''
-  const firstUser = messages.find(
-    (m: any) => m && typeof m === 'object' && m.role === 'user',
-  ) as { content?: unknown } | undefined
-  if (!firstUser) return ''
-  if (typeof firstUser.content === 'string') return firstUser.content
-  if (Array.isArray(firstUser.content)) {
-    const textBlock = firstUser.content.find(
-      (b: any) => b && typeof b === 'object' && b.type === 'text',
-    ) as { text?: string } | undefined
-    if (textBlock?.text) return textBlock.text
-  }
-  return ''
-}
-
-/**
  * Remove the OpenCode identity section from system prompt text.
  * Finds the OpenCode identity marker, then removes everything up to
- * (but not including) the '# Code References' marker.
+ * the earliest preserved tail marker (user instructions, code references, etc.).
+ * This preserves user-configured instructions from config.json.
  */
 export function sanitizeSystemText(
   text: string,
@@ -264,15 +224,27 @@ export function sanitizeSystemText(
 ): string {
   const startIdx = text.indexOf(OPENCODE_IDENTITY)
   if (startIdx === -1) return text
-  const codeRefsMarker = '# Code References'
-  const endIdx = text.indexOf(codeRefsMarker, startIdx)
+
+  // Find the earliest preserved tail marker after the OpenCode identity
+  let endIdx = -1
+  for (const marker of PRESERVED_TAIL_MARKERS) {
+    const idx = text.indexOf(marker, startIdx)
+    if (idx !== -1 && (endIdx === -1 || idx < endIdx)) {
+      endIdx = idx
+    }
+  }
+
   if (endIdx === -1) {
     onError?.(
-      `sanitizeSystemText: could not find '# Code References' after OpenCode identity`,
+      'sanitizeSystemText: could not find any preserved tail marker after OpenCode identity',
     )
     return text
   }
-  return text.slice(0, startIdx) + text.slice(endIdx)
+
+  // Preserve content from the marker onwards (skip leading newline if present)
+  const tail =
+    text[endIdx] === '\n' ? text.slice(endIdx + 1) : text.slice(endIdx)
+  return text.slice(0, startIdx) + tail
 }
 
 type SystemBlock = { type: string; text: string; [k: string]: unknown }
@@ -289,7 +261,10 @@ export function prependClaudeCodeIdentity(
   system: unknown,
   onError?: (msg: string) => void,
 ): SystemBlock[] {
-  const identityBlock: SystemBlock = { type: 'text', text: CLAUDE_CODE_IDENTITY }
+  const identityBlock: SystemBlock = {
+    type: 'text',
+    text: CLAUDE_CODE_IDENTITY,
+  }
 
   if (system == null) return [identityBlock]
 
@@ -302,7 +277,10 @@ export function prependClaudeCodeIdentity(
   if (isRecord(system)) {
     const type = typeof system.type === 'string' ? system.type : 'text'
     const text = typeof system.text === 'string' ? system.text : ''
-    return [identityBlock, { ...system, type, text: sanitizeSystemText(text, onError) }]
+    return [
+      identityBlock,
+      { ...system, type, text: sanitizeSystemText(text, onError) },
+    ]
   }
 
   if (!Array.isArray(system)) return [identityBlock]
@@ -312,8 +290,16 @@ export function prependClaudeCodeIdentity(
       return { type: 'text', text: sanitizeSystemText(item, onError) }
     }
 
-    if (isRecord(item) && item.type === 'text' && typeof item.text === 'string') {
-      return { ...item, type: 'text', text: sanitizeSystemText(item.text, onError) }
+    if (
+      isRecord(item) &&
+      item.type === 'text' &&
+      typeof item.text === 'string'
+    ) {
+      return {
+        ...item,
+        type: 'text',
+        text: sanitizeSystemText(item.text, onError),
+      }
     }
 
     return { type: 'text', text: String(item) }
@@ -328,8 +314,7 @@ export function prependClaudeCodeIdentity(
 }
 
 /**
- * Rewrite the full request body: sanitize system prompt, prefix tool names,
- * and inject CCH hash.
+ * Rewrite the full request body: sanitize system prompt and prefix tool names.
  */
 export function rewriteRequestBody(
   body: string,
@@ -338,20 +323,8 @@ export function rewriteRequestBody(
   try {
     const parsed = JSON.parse(body)
 
-    // Compute CCH from first user message
-    const firstUserText = extractFirstUserMessage(parsed.messages)
-    const cch = computeCCH(firstUserText, CLAUDE_CODE_VERSION)
-
     // Sanitize system prompt and prepend Claude Code identity
     parsed.system = prependClaudeCodeIdentity(parsed.system, onError)
-
-    // Inject cc_version with CCH hash into the identity block
-    if (Array.isArray(parsed.system) && parsed.system.length > 0) {
-      const first = parsed.system[0]
-      if (first?.type === 'text' && first.text === CLAUDE_CODE_IDENTITY) {
-        first.text = `${CLAUDE_CODE_IDENTITY}\n\ncc_version=${CLAUDE_CODE_VERSION}.${cch}`
-      }
-    }
 
     // Prefix tool names
     if (parsed.tools && Array.isArray(parsed.tools)) {

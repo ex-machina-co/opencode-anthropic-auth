@@ -166,8 +166,6 @@ describe('auth.loader', () => {
     expect(parsedBody.system[0].text).toContain(
       "You are Claude Code, Anthropic's official CLI for Claude.",
     )
-    // Should include cc_version with CCH hash
-    expect(parsedBody.system[0].text).toMatch(/cc_version=[\d.]+\.[a-f0-9]{3}/)
   })
 
   test('fetch wrapper refreshes expired token', async () => {

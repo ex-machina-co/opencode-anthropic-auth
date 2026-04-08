@@ -31,8 +31,10 @@ export const OPENCODE_IDENTITY =
 export const CLAUDE_CODE_IDENTITY =
   "You are Claude Code, Anthropic's official CLI for Claude."
 
-export const CCH_SALT = '59cf53e54c78'
-export const CCH_POSITIONS = [4, 7, 20]
-export const CLAUDE_CODE_VERSION = '2.1.2'
-
 export const USER_AGENT = 'claude-cli/2.1.2 (external, cli)'
+
+export const PRESERVED_TAIL_MARKERS = [
+  '\nInstructions from: ',
+  '\nInstructions from command: ',
+  '# Code References',
+]
