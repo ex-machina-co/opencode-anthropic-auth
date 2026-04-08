@@ -1,4 +1,13 @@
-import { REQUIRED_BETAS, TOOL_PREFIX, USER_AGENT } from './constants'
+import { createHash, randomBytes } from 'node:crypto'
+import {
+  CCH_POSITIONS,
+  CCH_SALT,
+  CLAUDE_CODE_IDENTITY,
+  CLAUDE_CODE_VERSION,
+  OPENCODE_IDENTITY,
+  REQUIRED_BETAS,
+  TOOL_PREFIX, USER_AGENT,
+} from './constants'
 
 export type FetchInput = string | URL | Request
 
@@ -203,6 +212,184 @@ export function rewriteUrl(input: FetchInput): {
       ? new Request(requestUrl.toString(), input)
       : requestUrl
   return { input: newInput, url: requestUrl }
+}
+
+/**
+ * Compute a 3-character content-binding hash (CCH) from the first user message.
+ * Algorithm reverse-engineered from Claude Code CLI.
+ */
+export function computeCCH(
+  firstUserMessageText: string,
+  version: string,
+): string {
+  if (!firstUserMessageText) {
+    return randomBytes(2).toString('hex').slice(0, 3)
+  }
+  const chars = CCH_POSITIONS.map((i) => firstUserMessageText[i] || '0').join(
+    '',
+  )
+  return createHash('sha256')
+    .update(`${CCH_SALT}${chars}${version}`)
+    .digest('hex')
+    .slice(0, 3)
+}
+
+/**
+ * Extract text from the first user message in an API messages array.
+ */
+export function extractFirstUserMessage(messages: unknown[]): string {
+  if (!Array.isArray(messages)) return ''
+  const firstUser = messages.find(
+    (m: any) => m && typeof m === 'object' && m.role === 'user',
+  ) as { content?: unknown } | undefined
+  if (!firstUser) return ''
+  if (typeof firstUser.content === 'string') return firstUser.content
+  if (Array.isArray(firstUser.content)) {
+    const textBlock = firstUser.content.find(
+      (b: any) => b && typeof b === 'object' && b.type === 'text',
+    ) as { text?: string } | undefined
+    if (textBlock?.text) return textBlock.text
+  }
+  return ''
+}
+
+/**
+ * Remove the OpenCode identity section from system prompt text.
+ * Finds the OpenCode identity marker, then removes everything up to
+ * (but not including) the '# Code References' marker.
+ */
+export function sanitizeSystemText(
+  text: string,
+  onError?: (msg: string) => void,
+): string {
+  const startIdx = text.indexOf(OPENCODE_IDENTITY)
+  if (startIdx === -1) return text
+  const codeRefsMarker = '# Code References'
+  const endIdx = text.indexOf(codeRefsMarker, startIdx)
+  if (endIdx === -1) {
+    onError?.(
+      `sanitizeSystemText: could not find '# Code References' after OpenCode identity`,
+    )
+    return text
+  }
+  return text.slice(0, startIdx) + text.slice(endIdx)
+}
+
+type SystemBlock = { type: string; text: string; [k: string]: unknown }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/**
+ * Sanitize system prompt and prepend Claude Code identity.
+ * Handles all Anthropic API system formats: undefined, string, or array of text blocks.
+ */
+export function prependClaudeCodeIdentity(
+  system: unknown,
+  onError?: (msg: string) => void,
+): SystemBlock[] {
+  const identityBlock: SystemBlock = { type: 'text', text: CLAUDE_CODE_IDENTITY }
+
+  if (system == null) return [identityBlock]
+
+  if (typeof system === 'string') {
+    const sanitized = sanitizeSystemText(system, onError)
+    if (sanitized === CLAUDE_CODE_IDENTITY) return [identityBlock]
+    return [identityBlock, { type: 'text', text: sanitized }]
+  }
+
+  if (isRecord(system)) {
+    const type = typeof system.type === 'string' ? system.type : 'text'
+    const text = typeof system.text === 'string' ? system.text : ''
+    return [identityBlock, { ...system, type, text: sanitizeSystemText(text, onError) }]
+  }
+
+  if (!Array.isArray(system)) return [identityBlock]
+
+  const sanitized: SystemBlock[] = system.map((item: unknown) => {
+    if (typeof item === 'string') {
+      return { type: 'text', text: sanitizeSystemText(item, onError) }
+    }
+
+    if (isRecord(item) && item.type === 'text' && typeof item.text === 'string') {
+      return { ...item, type: 'text', text: sanitizeSystemText(item.text, onError) }
+    }
+
+    return { type: 'text', text: String(item) }
+  })
+
+  // Idempotency: don't double-prepend if first block already has the identity
+  if (sanitized[0]?.text === CLAUDE_CODE_IDENTITY) {
+    return sanitized
+  }
+
+  return [identityBlock, ...sanitized]
+}
+
+/**
+ * Rewrite the full request body: sanitize system prompt, prefix tool names,
+ * and inject CCH hash.
+ */
+export function rewriteRequestBody(
+  body: string,
+  onError?: (msg: string) => void,
+): string {
+  try {
+    const parsed = JSON.parse(body)
+
+    // Compute CCH from first user message
+    const firstUserText = extractFirstUserMessage(parsed.messages)
+    const cch = computeCCH(firstUserText, CLAUDE_CODE_VERSION)
+
+    // Sanitize system prompt and prepend Claude Code identity
+    parsed.system = prependClaudeCodeIdentity(parsed.system, onError)
+
+    // Inject cc_version with CCH hash into the identity block
+    if (Array.isArray(parsed.system) && parsed.system.length > 0) {
+      const first = parsed.system[0]
+      if (first?.type === 'text' && first.text === CLAUDE_CODE_IDENTITY) {
+        first.text = `${CLAUDE_CODE_IDENTITY}\n\ncc_version=${CLAUDE_CODE_VERSION}.${cch}`
+      }
+    }
+
+    // Prefix tool names
+    if (parsed.tools && Array.isArray(parsed.tools)) {
+      parsed.tools = parsed.tools.map(
+        (tool: { name?: string; [k: string]: unknown }) => ({
+          ...tool,
+          name: tool.name ? `${TOOL_PREFIX}${tool.name}` : tool.name,
+        }),
+      )
+    }
+
+    if (parsed.messages && Array.isArray(parsed.messages)) {
+      parsed.messages = parsed.messages.map(
+        (msg: {
+          content?: Array<{
+            type: string
+            name?: string
+            [k: string]: unknown
+          }>
+          [k: string]: unknown
+        }) => {
+          if (msg.content && Array.isArray(msg.content)) {
+            msg.content = msg.content.map((block) => {
+              if (block.type === 'tool_use' && block.name) {
+                return { ...block, name: `${TOOL_PREFIX}${block.name}` }
+              }
+              return block
+            })
+          }
+          return msg
+        },
+      )
+    }
+
+    return JSON.stringify(parsed)
+  } catch {
+    return body
+  }
 }
 
 /**

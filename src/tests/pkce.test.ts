@@ -60,8 +60,7 @@ describe('generatePKCE', () => {
     )
     const hashBytes = new Uint8Array(digest)
     let bin = ''
-    for (let i = 0; i < hashBytes.length; i++)
-      bin += String.fromCharCode(hashBytes[i])
+    for (const byte of hashBytes) bin += String.fromCharCode(byte)
     const expected = btoa(bin)
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
@@ -120,8 +119,7 @@ describe('generatePKCE', () => {
       )
       const hashBytes = new Uint8Array(digest)
       let hashBin = ''
-      for (let i = 0; i < hashBytes.length; i++)
-        hashBin += String.fromCharCode(hashBytes[i])
+      for (const byte of hashBytes) hashBin += String.fromCharCode(byte)
       const expectedChallenge = btoa(hashBin)
         .replace(/\+/g, '-')
         .replace(/\//g, '_')

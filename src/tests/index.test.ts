@@ -7,58 +7,23 @@ function createMockClient() {
     auth: {
       set: mock(() => Promise.resolve()),
     },
-  } as any
+  }
 }
 
-async function getPlugin(client?: any) {
+async function getPlugin(client?: ReturnType<typeof createMockClient>) {
   return AnthropicAuthPlugin({
+    // @ts-expect-error: minimal mock for testing
     client: client ?? createMockClient(),
-    app: {} as any,
-    $: {} as any,
   }) as Promise<any>
 }
 
 describe('AnthropicAuthPlugin', () => {
-  test('returns an object with expected hook and auth properties', async () => {
+  test('returns an object with auth properties', async () => {
     const plugin = await getPlugin()
-    expect(plugin['experimental.chat.system.transform']).toBeFunction()
     expect(plugin.auth).toBeDefined()
     expect(plugin.auth.provider).toBe('anthropic')
     expect(plugin.auth.loader).toBeFunction()
     expect(plugin.auth.methods).toBeArray()
-  })
-})
-
-describe('experimental.chat.system.transform', () => {
-  const PREFIX = "You are Claude Code, Anthropic's official CLI for Claude."
-
-  test('prepends system prefix for anthropic provider', async () => {
-    const plugin = await getPlugin()
-    const hook = plugin['experimental.chat.system.transform']
-    const output = { system: ['Existing system prompt'] }
-    hook({ model: { providerID: 'anthropic' } }, output)
-
-    expect(output.system[0]).toBe(PREFIX)
-    expect(output.system[1]).toBe(`${PREFIX}\n\nExisting system prompt`)
-  })
-
-  test('does not modify system for non-anthropic providers', async () => {
-    const plugin = await getPlugin()
-    const hook = plugin['experimental.chat.system.transform']
-    const output = { system: ['Original prompt'] }
-    hook({ model: { providerID: 'openai' } }, output)
-
-    expect(output.system).toEqual(['Original prompt'])
-  })
-
-  test('handles empty system array for anthropic', async () => {
-    const plugin = await getPlugin()
-    const hook = plugin['experimental.chat.system.transform']
-    const output = { system: [] as string[] }
-    hook({ model: { providerID: 'anthropic' } }, output)
-
-    expect(output.system[0]).toBe(PREFIX)
-    expect(output.system).toHaveLength(1)
   })
 })
 
@@ -180,7 +145,8 @@ describe('auth.loader', () => {
 
     const body = JSON.stringify({
       tools: [{ name: 'bash', type: 'function' }],
-      messages: [],
+      messages: [{ role: 'user', content: 'hello world test message' }],
+      system: 'You are a helpful assistant.',
     })
 
     await result.fetch('https://api.anthropic.com/v1/messages', {
@@ -193,9 +159,15 @@ describe('auth.loader', () => {
     expect(capturedHeaders!.get('x-api-key')).toBeNull()
     expect(capturedHeaders!.get('anthropic-beta')).toContain('oauth-2025-04-20')
 
-    // Tool name should be prefixed
     const parsedBody = JSON.parse(capturedBody!)
+    // Tool name should be prefixed
     expect(parsedBody.tools[0].name).toBe('mcp_bash')
+    // System prompt should be rewritten with Claude Code identity
+    expect(parsedBody.system[0].text).toContain(
+      "You are Claude Code, Anthropic's official CLI for Claude.",
+    )
+    // Should include cc_version with CCH hash
+    expect(parsedBody.system[0].text).toMatch(/cc_version=[\d.]+\.[a-f0-9]{3}/)
   })
 
   test('fetch wrapper refreshes expired token', async () => {
@@ -258,13 +230,12 @@ describe('auth.loader', () => {
 
   test('fetch wrapper retries transient token refresh failures', async () => {
     let tokenRefreshCalls = 0
-    const setTimeoutMock = mock((handler: TimerHandler) => {
-      if (typeof handler === 'function') {
-        handler()
-      }
-      return 0 as ReturnType<typeof setTimeout>
-    }) as typeof setTimeout
+    const setTimeoutMock = mock((handler: Function) => {
+      handler()
+      return 0
+    })
 
+    // @ts-expect-error — mock override for testing
     globalThis.setTimeout = setTimeoutMock
 
     globalThis.fetch = mock((input: any) => {
@@ -407,10 +378,11 @@ describe('auth.loader', () => {
   test('concurrent expired token refresh should deduplicate to a single token request', async () => {
     let tokenRefreshCount = 0
 
-    globalThis.setTimeout = mock((handler: TimerHandler) => {
-      if (typeof handler === 'function') handler()
-      return 0 as ReturnType<typeof setTimeout>
-    }) as typeof setTimeout
+    // @ts-expect-error — mock override for testing
+    globalThis.setTimeout = mock((handler: Function) => {
+      handler()
+      return 0
+    })
 
     globalThis.fetch = mock((input: any, init: any) => {
       const url =
@@ -481,10 +453,11 @@ describe('auth.loader', () => {
   test('concurrent refresh with token rotation should not cause cascading failures', async () => {
     const usedRefreshTokens = new Set<string>()
 
-    globalThis.setTimeout = mock((handler: TimerHandler) => {
-      if (typeof handler === 'function') handler()
-      return 0 as ReturnType<typeof setTimeout>
-    }) as typeof setTimeout
+    // @ts-expect-error — mock override for testing
+    globalThis.setTimeout = mock((handler: Function) => {
+      handler()
+      return 0
+    })
 
     globalThis.fetch = mock((input: any, init: any) => {
       const url =
@@ -593,10 +566,11 @@ describe('auth.loader', () => {
   })
 
   test('concurrent refresh should persist tokens exactly once', async () => {
-    globalThis.setTimeout = mock((handler: TimerHandler) => {
-      if (typeof handler === 'function') handler()
-      return 0 as ReturnType<typeof setTimeout>
-    }) as typeof setTimeout
+    // @ts-expect-error — mock override for testing
+    globalThis.setTimeout = mock((handler: Function) => {
+      handler()
+      return 0
+    })
 
     globalThis.fetch = mock((input: any) => {
       const url =
