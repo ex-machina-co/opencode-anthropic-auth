@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
+import dedent from 'dedent'
 import {
   CLAUDE_CODE_IDENTITY,
   OPENCODE_IDENTITY,
@@ -462,121 +463,119 @@ describe('createStrippedStream', () => {
 })
 
 describe('sanitizeSystemText', () => {
-  // A realistic OpenCode system prompt showing what gets stripped vs preserved.
+  // Anchor-based sanitization. Three mechanisms:
   //
-  //   STRIPPED: everything from the identity line down to the first tail marker
-  //   KEPT:    everything before the identity + everything from the tail marker on
+  //   1. The OPENCODE_IDENTITY line is always removed.
+  //   2. Any paragraph containing a PARAGRAPH_REMOVAL_ANCHORS entry
+  //      (e.g. "github.com/anomalyco/opencode", "opencode.ai/docs")
+  //      is removed entirely.
+  //   3. TEXT_REPLACEMENTS are applied inline for short branded strings
+  //      inside paragraphs we want to keep (e.g. "if OpenCode honestly"
+  //      → "if the assistant honestly").
   //
-  //   ┌─────────────────────────────────────────────────────────────┐
-  //   │ You are OpenCode, the best coding agent on the planet.     │ ← STRIPPED
-  //   │                                                            │
-  //   │ OpenCode-specific instructions, tool docs, etc.            │ ← STRIPPED
-  //   │ All of this is removed.                                    │ ← STRIPPED
-  //   │                                                            │
-  //   │ Instructions from: ~/.config/opencode/preamble.md          │ ← KEPT
-  //   │ Be concise. Prefer TypeScript.                             │ ← KEPT
-  //   │                                                            │
-  //   │ # Code References                                          │ ← KEPT
-  //   │ src/index.ts ...                                           │ ← KEPT
-  //   └─────────────────────────────────────────────────────────────┘
-
-  const REALISTIC_PROMPT = [
-    'You are OpenCode, the best coding agent on the planet.',
-    '',
-    'You have access to tools for reading files, running commands,',
-    'and editing code. Always explain before acting.',
-    '',
-    'Instructions from: ~/.config/opencode/preamble.md',
-    'Be concise. Prefer TypeScript.',
-    '',
-    '# Code References',
-    'src/index.ts (1-50)',
-  ].join('\n')
-
-  test('strips OpenCode section, keeps user instructions and code refs', () => {
-    const result = sanitizeSystemText(REALISTIC_PROMPT)
-
-    // Stripped
-    expect(result).not.toContain('OpenCode')
-    expect(result).not.toContain('explain before acting')
-
-    // Kept
-    expect(result).toContain(
-      'Instructions from: ~/.config/opencode/preamble.md',
-    )
-    expect(result).toContain('Be concise. Prefer TypeScript.')
-    expect(result).toContain('# Code References')
-    expect(result).toContain('src/index.ts (1-50)')
-  })
+  // Everything else — generic instructions, tone/style, task management,
+  // tool policy, environment info, skills, user instructions, file paths
+  // containing "opencode", etc. — is preserved.
 
   test('returns text unchanged when OpenCode identity not present', () => {
     const text = 'Just a normal system prompt'
     expect(sanitizeSystemText(text)).toBe(text)
   })
 
-  test('calls onError when no preserved tail marker is found', () => {
+  test('removes identity, keeps generic content', () => {
+    const result = sanitizeSystemText(dedent`
+      You are OpenCode, the best coding agent on the planet.
+
+      You have access to tools for reading files.
+
+      Instructions from: ~/.config/opencode/preamble.md
+      Be concise. Prefer TypeScript.
+
+      # Code References
+      src/index.ts (1-50)
+    `)
+    expect(result).toMatchInlineSnapshot(`
+      "You have access to tools for reading files.
+
+      Instructions from: ~/.config/opencode/preamble.md
+      Be concise. Prefer TypeScript.
+
+      # Code References
+      src/index.ts (1-50)"
+    `)
+  })
+
+  test('removes paragraph containing feedback URL anchor', () => {
+    const result = sanitizeSystemText(dedent`
+      You are OpenCode, the best coding agent on the planet.
+
+      Report issues at https://github.com/anomalyco/opencode please.
+
+      Generic instructions that stay.
+    `)
+    expect(result).toMatchInlineSnapshot(`"Generic instructions that stay."`)
+  })
+
+  test('removes paragraph containing docs URL anchor', () => {
+    const result = sanitizeSystemText(dedent`
+      You are OpenCode, the best coding agent on the planet.
+
+      Check out the docs at https://opencode.ai/docs for more info.
+
+      Other content preserved.
+    `)
+    expect(result).toMatchInlineSnapshot(`"Other content preserved."`)
+  })
+
+  test('applies inline text replacement', () => {
+    const result = sanitizeSystemText(dedent`
+      You are OpenCode, the best coding agent on the planet.
+
+      It is best if OpenCode honestly applies rigorous standards.
+    `)
+    expect(result).toMatchInlineSnapshot(
+      `"It is best if the assistant honestly applies rigorous standards."`,
+    )
+  })
+
+  test('preserves "opencode" in file paths and unrelated content', () => {
+    const result = sanitizeSystemText(dedent`
+      You are OpenCode, the best coding agent on the planet.
+
+      Instructions from: /Users/user/project/.opencode/AGENTS.md
+      Run opencode to start the CLI.
+    `)
+    expect(result).toMatchInlineSnapshot(`
+      "Instructions from: /Users/user/project/.opencode/AGENTS.md
+      Run opencode to start the CLI."
+    `)
+  })
+
+  test('preserves content before and after identity', () => {
+    const result = sanitizeSystemText(dedent`
+      Some prefix content
+
+      You are OpenCode, the best coding agent on the planet.
+
+      # Code References
+      file contents
+    `)
+    expect(result).toMatchInlineSnapshot(`
+      "Some prefix content
+
+      # Code References
+      file contents"
+    `)
+  })
+
+  test('does not call onError when identity is present and removed', () => {
     const onError = mock(() => {})
-    const text = [
-      'You are OpenCode, the best coding agent on the planet.',
-      'No markers at all in this prompt.',
-    ].join('\n')
-    const result = sanitizeSystemText(text, onError)
-    expect(result).toBe(text)
-    expect(onError).toHaveBeenCalledTimes(1)
-  })
+    sanitizeSystemText(dedent`
+      You are OpenCode, the best coding agent on the planet.
 
-  test('preserves content before OpenCode identity', () => {
-    const text = [
-      'Some prefix content',
-      'You are OpenCode, the best coding agent on the planet.',
-      'OpenCode stuff to strip',
-      '# Code References',
-      'file contents',
-    ].join('\n')
-    const result = sanitizeSystemText(text)
-    expect(result).toBe('Some prefix content\n# Code References\nfile contents')
-  })
-
-  test('prefers earliest tail marker (instructions before code refs)', () => {
-    // "Instructions from:" appears before "# Code References",
-    // so we cut there — keeping the user's custom instructions.
-    const text = [
-      'You are OpenCode, the best coding agent on the planet.',
-      'OpenCode internal stuff',
-      'Instructions from: preamble.md',
-      'user-authored content',
-      '# Code References',
-      'files',
-    ].join('\n')
-    const result = sanitizeSystemText(text)
-    expect(result).not.toContain('OpenCode')
-    expect(result).toContain('Instructions from: preamble.md')
-    expect(result).toContain('user-authored content')
-    expect(result).toContain('# Code References')
-  })
-
-  test('preserves instructions from command', () => {
-    const text = [
-      'You are OpenCode, the best coding agent on the planet.',
-      'Internal details',
-      'Instructions from command: my-script',
-      'Script output here',
-      '# Code References',
-    ].join('\n')
-    const result = sanitizeSystemText(text)
-    expect(result).toContain('Instructions from command: my-script')
-    expect(result).toContain('Script output here')
-  })
-
-  test('falls back to # Code References when no instruction markers', () => {
-    const text = [
-      'You are OpenCode, the best coding agent on the planet.',
-      'Stuff to strip',
-      '# Code References',
-      'src/main.ts',
-    ].join('\n')
-    const result = sanitizeSystemText(text)
-    expect(result).toBe('# Code References\nsrc/main.ts')
+      Normal content.
+    `)
+    expect(onError).not.toHaveBeenCalled()
   })
 })
 
@@ -651,24 +650,24 @@ describe('rewriteRequestBody', () => {
     expect(rewriteRequestBody(body)).toBe(body)
   })
 
-  test('passes onError through to sanitization', () => {
+  test('does not call onError when identity is present (rules always match)', () => {
     const onError = mock(() => {})
     const body = JSON.stringify({
       messages: [],
-      system: `${OPENCODE_IDENTITY}\nno code refs marker here`,
+      system: `${OPENCODE_IDENTITY}\nsome other content`,
     })
-    rewriteRequestBody(body, onError)
-    expect(onError).toHaveBeenCalledTimes(1)
+    rewriteRequestBody(body)
+    expect(onError).not.toHaveBeenCalled()
   })
 
   test('rewrites realistic OpenCode request end-to-end', () => {
     //  Input system prompt (array of blocks):
-    //    [0] "You are OpenCode..." + internal stuff + "# Code References\n..."
+    //    [0] "You are OpenCode..." + generic content + "# Code References\n..."
     //    [1] "Additional context block"
     //
     //  Expected output:
     //    [0] Claude Code identity (prepended)
-    //    [1] "# Code References\n..." (OpenCode section stripped)
+    //    [1] Identity removed, generic content preserved, # Code References kept
     //    [2] "Additional context block" (untouched)
 
     const systemPrompt = [
@@ -706,8 +705,9 @@ describe('rewriteRequestBody', () => {
 
     // System prompt rewritten
     expect(result.system[0].text).toBe(CLAUDE_CODE_IDENTITY)
+    expect(result.system[1].text).not.toContain(OPENCODE_IDENTITY)
+    expect(result.system[1].text).toContain('You have access to tools.')
     expect(result.system[1].text).toContain('# Code References')
-    expect(result.system[1].text).not.toContain('OpenCode')
     expect(result.system[2].text).toBe('Additional context block')
 
     // Tool names prefixed
@@ -724,5 +724,32 @@ describe('rewriteRequestBody', () => {
     const body = JSON.stringify({ model: 'claude-3' })
     const result = JSON.parse(rewriteRequestBody(body))
     expect(result.system[0].text).toContain(CLAUDE_CODE_IDENTITY)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Realistic prompt – snapshot tests
+// ---------------------------------------------------------------------------
+
+import { REALISTIC_SYSTEM_PROMPT } from './fixtures/realistic-system-prompt'
+
+describe('sanitizeSystemText – realistic prompt', () => {
+  test('sanitizeSystemText output snapshot', () => {
+    const result = sanitizeSystemText(REALISTIC_SYSTEM_PROMPT)
+    expect(result).toMatchSnapshot()
+  })
+
+  test('rewriteRequestBody output snapshot', () => {
+    const body = JSON.stringify({
+      system: REALISTIC_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: 'Hello' }],
+      tools: [
+        { name: 'bash', type: 'function' },
+        { name: 'read', type: 'function' },
+        { name: 'edit', type: 'function' },
+      ],
+    })
+    const result = rewriteRequestBody(body)
+    expect(result).toMatchSnapshot()
   })
 })

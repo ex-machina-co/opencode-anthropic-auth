@@ -8,5 +8,6 @@
     "noEmit": false,
     "allowImportingTsExtensions": false
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/tests/**"]
 }

@@ -33,8 +33,27 @@ export const CLAUDE_CODE_IDENTITY =
 
 export const USER_AGENT = 'claude-cli/2.1.2 (external, cli)'
 
-export const PRESERVED_TAIL_MARKERS = [
-  '\nInstructions from: ',
-  '\nInstructions from command: ',
-  '# Code References',
+/**
+ * Anchors that identify paragraphs to remove from the system prompt.
+ * Any paragraph (text between blank lines) containing one of these
+ * strings is removed entirely.
+ *
+ * This is resilient to upstream rewording — as long as the anchor
+ * string (typically a URL) still appears somewhere in the paragraph,
+ * the removal works regardless of how the surrounding text changes.
+ */
+export const PARAGRAPH_REMOVAL_ANCHORS = [
+  // Help/feedback block — references the OpenCode GitHub repo
+  'github.com/anomalyco/opencode',
+  // OpenCode docs guidance — references the OpenCode docs URL
+  'opencode.ai/docs',
+]
+
+/**
+ * Inline text replacements applied after paragraph removal.
+ * These handle cases where "OpenCode" appears inside a paragraph
+ * we want to keep (so we can't remove the whole paragraph).
+ */
+export const TEXT_REPLACEMENTS: { match: string; replacement: string }[] = [
+  { match: 'if OpenCode honestly', replacement: 'if the assistant honestly' },
 ]

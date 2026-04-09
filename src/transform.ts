@@ -1,8 +1,9 @@
 import {
   CLAUDE_CODE_IDENTITY,
   OPENCODE_IDENTITY,
-  PRESERVED_TAIL_MARKERS,
+  PARAGRAPH_REMOVAL_ANCHORS,
   REQUIRED_BETAS,
+  TEXT_REPLACEMENTS,
   TOOL_PREFIX,
   USER_AGENT,
 } from './constants'
@@ -213,38 +214,52 @@ export function rewriteUrl(input: FetchInput): {
 }
 
 /**
- * Remove the OpenCode identity section from system prompt text.
- * Finds the OpenCode identity marker, then removes everything up to
- * the earliest preserved tail marker (user instructions, code references, etc.).
- * This preserves user-configured instructions from config.json.
+ * Sanitize OpenCode-branded strings from the system prompt text.
+ *
+ * 1. Removes the OPENCODE_IDENTITY line.
+ * 2. Removes any paragraph (text between blank lines) that contains
+ *    one of the PARAGRAPH_REMOVAL_ANCHORS — typically URLs that
+ *    identify OpenCode-specific content.
+ * 3. Applies TEXT_REPLACEMENTS for inline occurrences of "OpenCode"
+ *    inside paragraphs we want to keep.
+ *
+ * This approach is resilient to upstream rewording of the OpenCode
+ * prompt — as long as the anchor strings (URLs, etc.) still appear
+ * somewhere in the paragraph, the removal works.
  */
-export function sanitizeSystemText(
-  text: string,
-  onError?: (msg: string) => void,
-): string {
-  const startIdx = text.indexOf(OPENCODE_IDENTITY)
-  if (startIdx === -1) return text
+export function sanitizeSystemText(text: string): string {
+  if (!text.includes(OPENCODE_IDENTITY)) return text
 
-  // Find the earliest preserved tail marker after the OpenCode identity
-  let endIdx = -1
-  for (const marker of PRESERVED_TAIL_MARKERS) {
-    const idx = text.indexOf(marker, startIdx)
-    if (idx !== -1 && (endIdx === -1 || idx < endIdx)) {
-      endIdx = idx
+  // Split into paragraphs (separated by one or more blank lines)
+  const paragraphs = text.split(/\n\n+/)
+
+  const filtered = paragraphs.filter((paragraph) => {
+    // Remove the identity line (may be its own paragraph or part of one)
+    if (paragraph.includes(OPENCODE_IDENTITY)) {
+      // If the paragraph is JUST the identity, drop it entirely
+      if (paragraph.trim() === OPENCODE_IDENTITY) return false
+      // Otherwise it's mixed — we'll handle inline below
     }
+
+    // Remove paragraphs containing any removal anchor
+    for (const anchor of PARAGRAPH_REMOVAL_ANCHORS) {
+      if (paragraph.includes(anchor)) return false
+    }
+
+    return true
+  })
+
+  let result = filtered.join('\n\n')
+
+  // Remove the identity line if it was part of a larger paragraph
+  result = result.replace(OPENCODE_IDENTITY, '').replace(/\n{3,}/g, '\n\n')
+
+  // Apply inline text replacements
+  for (const rule of TEXT_REPLACEMENTS) {
+    result = result.replace(rule.match, rule.replacement)
   }
 
-  if (endIdx === -1) {
-    onError?.(
-      'sanitizeSystemText: could not find any preserved tail marker after OpenCode identity',
-    )
-    return text
-  }
-
-  // Preserve content from the marker onwards (skip leading newline if present)
-  const tail =
-    text[endIdx] === '\n' ? text.slice(endIdx + 1) : text.slice(endIdx)
-  return text.slice(0, startIdx) + tail
+  return result.trim()
 }
 
 type SystemBlock = { type: string; text: string; [k: string]: unknown }
@@ -257,10 +272,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Sanitize system prompt and prepend Claude Code identity.
  * Handles all Anthropic API system formats: undefined, string, or array of text blocks.
  */
-export function prependClaudeCodeIdentity(
-  system: unknown,
-  onError?: (msg: string) => void,
-): SystemBlock[] {
+export function prependClaudeCodeIdentity(system: unknown): SystemBlock[] {
   const identityBlock: SystemBlock = {
     type: 'text',
     text: CLAUDE_CODE_IDENTITY,
@@ -269,7 +281,7 @@ export function prependClaudeCodeIdentity(
   if (system == null) return [identityBlock]
 
   if (typeof system === 'string') {
-    const sanitized = sanitizeSystemText(system, onError)
+    const sanitized = sanitizeSystemText(system)
     if (sanitized === CLAUDE_CODE_IDENTITY) return [identityBlock]
     return [identityBlock, { type: 'text', text: sanitized }]
   }
@@ -277,17 +289,14 @@ export function prependClaudeCodeIdentity(
   if (isRecord(system)) {
     const type = typeof system.type === 'string' ? system.type : 'text'
     const text = typeof system.text === 'string' ? system.text : ''
-    return [
-      identityBlock,
-      { ...system, type, text: sanitizeSystemText(text, onError) },
-    ]
+    return [identityBlock, { ...system, type, text: sanitizeSystemText(text) }]
   }
 
   if (!Array.isArray(system)) return [identityBlock]
 
   const sanitized: SystemBlock[] = system.map((item: unknown) => {
     if (typeof item === 'string') {
-      return { type: 'text', text: sanitizeSystemText(item, onError) }
+      return { type: 'text', text: sanitizeSystemText(item) }
     }
 
     if (
@@ -298,7 +307,7 @@ export function prependClaudeCodeIdentity(
       return {
         ...item,
         type: 'text',
-        text: sanitizeSystemText(item.text, onError),
+        text: sanitizeSystemText(item.text),
       }
     }
 
@@ -316,15 +325,12 @@ export function prependClaudeCodeIdentity(
 /**
  * Rewrite the full request body: sanitize system prompt and prefix tool names.
  */
-export function rewriteRequestBody(
-  body: string,
-  onError?: (msg: string) => void,
-): string {
+export function rewriteRequestBody(body: string): string {
   try {
     const parsed = JSON.parse(body)
 
     // Sanitize system prompt and prepend Claude Code identity
-    parsed.system = prependClaudeCodeIdentity(parsed.system, onError)
+    parsed.system = prependClaudeCodeIdentity(parsed.system)
 
     // Prefix tool names
     if (parsed.tools && Array.isArray(parsed.tools)) {

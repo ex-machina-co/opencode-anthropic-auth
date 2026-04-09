@@ -11,10 +11,10 @@ function createMockClient() {
 }
 
 async function getPlugin(client?: ReturnType<typeof createMockClient>) {
-  return AnthropicAuthPlugin({
+  return (await AnthropicAuthPlugin({
     // @ts-expect-error: minimal mock for testing
     client: client ?? createMockClient(),
-  }) as Promise<any>
+  })) as Promise<any>
 }
 
 describe('AnthropicAuthPlugin', () => {
@@ -228,7 +228,7 @@ describe('auth.loader', () => {
 
   test('fetch wrapper retries transient token refresh failures', async () => {
     let tokenRefreshCalls = 0
-    const setTimeoutMock = mock((handler: Function) => {
+    const setTimeoutMock = mock((handler: () => unknown) => {
       handler()
       return 0
     })
@@ -377,7 +377,7 @@ describe('auth.loader', () => {
     let tokenRefreshCount = 0
 
     // @ts-expect-error — mock override for testing
-    globalThis.setTimeout = mock((handler: Function) => {
+    globalThis.setTimeout = mock((handler: () => unknown) => {
       handler()
       return 0
     })
@@ -452,7 +452,7 @@ describe('auth.loader', () => {
     const usedRefreshTokens = new Set<string>()
 
     // @ts-expect-error — mock override for testing
-    globalThis.setTimeout = mock((handler: Function) => {
+    globalThis.setTimeout = mock((handler: () => unknown) => {
       handler()
       return 0
     })
@@ -565,7 +565,7 @@ describe('auth.loader', () => {
 
   test('concurrent refresh should persist tokens exactly once', async () => {
     // @ts-expect-error — mock override for testing
-    globalThis.setTimeout = mock((handler: Function) => {
+    globalThis.setTimeout = mock((handler: () => unknown) => {
       handler()
       return 0
     })
