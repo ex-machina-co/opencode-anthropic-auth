@@ -140,17 +140,7 @@ exports[`sanitizeSystemText – realistic prompt rewriteRequestBody output snaps
 {
   "messages": [
     {
-      "content": "Hello",
-      "role": "user",
-    },
-  ],
-  "system": [
-    {
-      "text": "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
-      "type": "text",
-    },
-    {
-      "text": 
+      "content": 
 "You are an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
 
 IMPORTANT: You must NEVER generate or guess URLs for the user unless you are confident that the URLs are for helping the user with programming. You may use URLs provided by the user in their messages or local files.
@@ -283,8 +273,16 @@ Instructions from: /Users/user/project/.opencode/AGENTS.md
 
 This project uses Bun as the runtime and test runner.
 Run \`bun test\` to execute tests.
-Run \`bun run build\` to compile."
+Run \`bun run build\` to compile.
+
+Hello"
 ,
+      "role": "user",
+    },
+  ],
+  "system": [
+    {
+      "text": "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
       "type": "text",
     },
   ],

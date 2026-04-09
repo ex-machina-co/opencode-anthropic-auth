@@ -207,18 +207,15 @@ describe('auth.loader', () => {
     const parsedBody = JSON.parse(capturedBody!)
     // Tool name should be prefixed
     expect(parsedBody.tools[0].name).toBe('mcp_bash')
-    expect(parsedBody.system).toMatchInlineSnapshot(`
-      [
-        {
-          "text": "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
-          "type": "text",
-        },
-        {
-          "text": "You are a helpful assistant.",
-          "type": "text",
-        },
-      ]
-    `)
+    // After relocation, system should only contain the identity block
+    expect(parsedBody.system).toHaveLength(1)
+    expect(parsedBody.system[0].text).toBe(
+      "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+    )
+    // Non-core system text relocated to first user message
+    expect(parsedBody.messages[0].content).toContain(
+      'You are a helpful assistant.',
+    )
   })
 
   test('fetch wrapper refreshes expired token', async () => {

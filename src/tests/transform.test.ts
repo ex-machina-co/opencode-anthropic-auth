@@ -665,10 +665,9 @@ describe('rewriteRequestBody', () => {
     //    [0] "You are OpenCode..." + generic content + "# Code References\n..."
     //    [1] "Additional context block"
     //
-    //  Expected output:
-    //    [0] Claude Code identity (prepended)
-    //    [1] Identity removed, generic content preserved, # Code References kept
-    //    [2] "Additional context block" (untouched)
+    //  Expected output after relocation:
+    //    system = [identity block only]
+    //    Non-core system text relocated to first user message
 
     const systemPrompt = [
       'You are OpenCode, the best coding agent on the planet.',
@@ -703,27 +702,138 @@ describe('rewriteRequestBody', () => {
 
     const result = JSON.parse(rewriteRequestBody(body))
 
-    // System prompt rewritten
-    expect(result.system[0].text).toBe(CLAUDE_CODE_IDENTITY)
-    expect(result.system[1].text).not.toContain(OPENCODE_IDENTITY)
-    expect(result.system[1].text).toContain('You have access to tools.')
-    expect(result.system[1].text).toContain('# Code References')
-    expect(result.system[2].text).toBe('Additional context block')
+    // System should only contain the identity block
+    expect(result.system).toHaveLength(1)
+    expect(result.system).toMatchInlineSnapshot(`
+      [
+        {
+          "text": "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+          "type": "text",
+        },
+      ]
+    `)
 
-    // Tool names prefixed
-    expect(result.tools[0].name).toBe('mcp_bash')
-    expect(result.tools[1].name).toBe('mcp_read_file')
+    // Non-core system text relocated to first user message
+    const userContent = result.messages
+    expect(userContent).toMatchInlineSnapshot(`
+      [
+        {
+          "content": 
+      "You have access to tools.
 
-    // tool_use blocks in messages prefixed, text untouched
-    expect(result.messages[1].content[0].name).toBe('mcp_bash')
-    expect(result.messages[1].content[1].text).toBe('Let me check')
-    expect(result.messages[0].content).toBe('Help me fix this bug')
+      # Code References
+
+      Here are some files.
+
+      Additional context block
+
+      Help me fix this bug"
+      ,
+          "role": "user",
+        },
+        {
+          "content": [
+            {
+              "id": "tool_1",
+              "name": "mcp_bash",
+              "type": "tool_use",
+            },
+            {
+              "text": "Let me check",
+              "type": "text",
+            },
+          ],
+          "role": "assistant",
+        },
+      ]
+    `)
   })
 
   test('handles body with no messages array', () => {
     const body = JSON.stringify({ model: 'claude-3' })
     const result = JSON.parse(rewriteRequestBody(body))
     expect(result.system[0].text).toContain(CLAUDE_CODE_IDENTITY)
+  })
+
+  test('relocates non-core system entries to first user message (string content)', () => {
+    const body = JSON.stringify({
+      system: 'Custom instructions for the assistant.',
+      messages: [{ role: 'user', content: 'hello' }],
+    })
+    const result = JSON.parse(rewriteRequestBody(body))
+
+    // System should only contain the identity block
+    expect(result.system).toHaveLength(1)
+    expect(result.system[0].text).toBe(CLAUDE_CODE_IDENTITY)
+
+    // Non-core text relocated to first user message (string content)
+    expect(result.messages[0].content).toContain(
+      'Custom instructions for the assistant.',
+    )
+    // Original user content preserved
+    expect(result.messages[0].content).toContain('hello')
+  })
+
+  test('relocates non-core system entries to first user message (array content)', () => {
+    const body = JSON.stringify({
+      system: [
+        { type: 'text', text: 'Block A instructions' },
+        { type: 'text', text: 'Block B instructions' },
+      ],
+      messages: [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'hello' }],
+        },
+      ],
+    })
+    const result = JSON.parse(rewriteRequestBody(body))
+
+    // System should only contain the identity block
+    expect(result.system).toHaveLength(1)
+    expect(result.system[0].text).toBe(CLAUDE_CODE_IDENTITY)
+
+    // Relocated content prepended as first content block
+    expect(result.messages[0].content[0].type).toBe('text')
+    expect(result.messages[0].content[0].text).toContain('Block A instructions')
+    expect(result.messages[0].content[0].text).toContain('Block B instructions')
+    // Original user content preserved
+    expect(result.messages[0].content[1].text).toBe('hello')
+  })
+
+  test('keeps system intact when no user messages exist', () => {
+    const body = JSON.stringify({
+      system: 'Some instructions',
+      messages: [],
+    })
+    const result = JSON.parse(rewriteRequestBody(body))
+
+    // With no user messages to relocate into, system stays as-is
+    expect(result.system).toHaveLength(2)
+    expect(result.system[0].text).toBe(CLAUDE_CODE_IDENTITY)
+    expect(result.system[1].text).toBe('Some instructions')
+  })
+
+  test('relocates multiple non-core entries joined with double newline', () => {
+    const body = JSON.stringify({
+      system: [
+        { type: 'text', text: 'First block' },
+        { type: 'text', text: 'Second block' },
+        { type: 'text', text: 'Third block' },
+      ],
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+    const result = JSON.parse(rewriteRequestBody(body))
+
+    expect(result.system).toHaveLength(1)
+    expect(result.system[0].text).toBe(CLAUDE_CODE_IDENTITY)
+
+    // All three blocks joined with \n\n and prepended to user message
+    const userContent = result.messages[0].content
+    expect(userContent).toContain('First block')
+    expect(userContent).toContain('Second block')
+    expect(userContent).toContain('Third block')
+    expect(userContent).toContain('First block\n\nSecond block\n\nThird block')
   })
 })
 

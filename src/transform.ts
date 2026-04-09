@@ -332,6 +332,39 @@ export function rewriteRequestBody(body: string): string {
     // Sanitize system prompt and prepend Claude Code identity
     parsed.system = prependClaudeCodeIdentity(parsed.system)
 
+    // --- Relocate non-core system entries to user messages ---
+    // Anthropic's API validates system[] content for OAuth requests.
+    // Third-party system prompts trigger a 400 rejection when they
+    // appear in `system[]`. Keep only the identity block in `system[]`
+    // and prepend everything else to the first user message.
+    if (Array.isArray(parsed.system) && parsed.system.length > 1) {
+      const kept = [parsed.system[0]] // identity block
+      const movedTexts: string[] = []
+
+      for (let i = 1; i < parsed.system.length; i++) {
+        const entry = parsed.system[i]
+        const txt = typeof entry === 'string' ? entry : (entry?.text ?? '')
+        if (txt.length > 0) movedTexts.push(txt)
+      }
+
+      if (movedTexts.length > 0 && Array.isArray(parsed.messages)) {
+        const firstUser = parsed.messages.find(
+          (m: { role?: string }) => m.role === 'user',
+        )
+
+        if (firstUser) {
+          parsed.system = kept
+          const prefix = movedTexts.join('\n\n')
+
+          if (typeof firstUser.content === 'string') {
+            firstUser.content = `${prefix}\n\n${firstUser.content}`
+          } else if (Array.isArray(firstUser.content)) {
+            firstUser.content.unshift({ type: 'text', text: prefix })
+          }
+        }
+      }
+    }
+
     // Prefix tool names
     if (parsed.tools && Array.isArray(parsed.tools)) {
       parsed.tools = parsed.tools.map(
