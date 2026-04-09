@@ -750,6 +750,6 @@ describe('sanitizeSystemText – realistic prompt', () => {
       ],
     })
     const result = rewriteRequestBody(body)
-    expect(result).toMatchSnapshot()
+    expect(JSON.parse(result)).toMatchSnapshot()
   })
 })

@@ -29,7 +29,7 @@ export const REQUIRED_BETAS = [
 export const OPENCODE_IDENTITY =
   'You are OpenCode, the best coding agent on the planet.'
 export const CLAUDE_CODE_IDENTITY =
-  "You are Claude Code, Anthropic's official CLI for Claude."
+  "You are a Claude agent, built on Anthropic's Claude Agent SDK."
 
 export const USER_AGENT = 'claude-cli/2.1.2 (external, cli)'
 

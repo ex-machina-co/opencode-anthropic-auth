@@ -15,6 +15,7 @@
     "build": "tsc -p tsconfig.build.json",
     "dev": "bun scripts/dev.ts",
     "dev:clean": "bun scripts/dev-clean.ts",
+    "extract": "bun scripts/extract-system-prompt.ts",
     "test": "bun test",
     "types": "tsc",
     "format": "biome format --write .",

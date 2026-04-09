@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { AnthropicAuthPlugin } from '../index'
 
+/** Extract the URL string from a fetch input (string, URL, or Request). */
+function extractUrl(input: string | URL | Request): string {
+  if (typeof input === 'string') return input
+  if (input instanceof URL) return input.toString()
+  return input.url
+}
+
 // Minimal mock of the OpenCode plugin client
 function createMockClient() {
   return {
@@ -8,6 +15,44 @@ function createMockClient() {
       set: mock(() => Promise.resolve()),
     },
   }
+}
+
+const MESSAGES_URL = 'https://api.anthropic.com/v1/messages'
+const EMPTY_POST = { method: 'POST', body: '{}' } as const
+
+/**
+ * Set up the common test scaffolding for concurrent refresh tests:
+ * mocks setTimeout to be synchronous and creates a plugin loader
+ * with an already-expired OAuth token.
+ */
+async function setupExpiredTokenLoader() {
+  // @ts-expect-error — mock override for testing
+  globalThis.setTimeout = mock((handler: () => unknown) => {
+    handler()
+    return 0
+  })
+
+  const mockClient = createMockClient()
+  const plugin = await getPlugin(mockClient)
+  const result = await plugin.auth.loader(
+    () =>
+      Promise.resolve({
+        type: 'oauth',
+        access: 'expired-token',
+        refresh: 'old-refresh',
+        expires: Date.now() - 1000,
+      }),
+    { models: {} },
+  )
+
+  return { mockClient, result }
+}
+
+/** Fire 5 concurrent fetch requests against /v1/messages. */
+function fireConcurrentFetches(result: { fetch: typeof fetch }) {
+  return Promise.all(
+    Array.from({ length: 5 }, () => result.fetch(MESSAGES_URL, EMPTY_POST)),
+  )
 }
 
 async function getPlugin(client?: ReturnType<typeof createMockClient>) {
@@ -162,22 +207,25 @@ describe('auth.loader', () => {
     const parsedBody = JSON.parse(capturedBody!)
     // Tool name should be prefixed
     expect(parsedBody.tools[0].name).toBe('mcp_bash')
-    // System prompt should be rewritten with Claude Code identity
-    expect(parsedBody.system[0].text).toContain(
-      "You are Claude Code, Anthropic's official CLI for Claude.",
-    )
+    expect(parsedBody.system).toMatchInlineSnapshot(`
+      [
+        {
+          "text": "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+          "type": "text",
+        },
+        {
+          "text": "You are a helpful assistant.",
+          "type": "text",
+        },
+      ]
+    `)
   })
 
   test('fetch wrapper refreshes expired token', async () => {
     const fetchCalls: Array<{ url: string; body?: string }> = []
 
     globalThis.fetch = mock((input: any, init: any) => {
-      const url =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.toString()
-            : input.url
+      const url = extractUrl(input)
       fetchCalls.push({ url, body: init?.body })
 
       if (url.includes('/v1/oauth/token')) {
@@ -237,12 +285,7 @@ describe('auth.loader', () => {
     globalThis.setTimeout = setTimeoutMock
 
     globalThis.fetch = mock((input: any) => {
-      const url =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.toString()
-            : input.url
+      const url = extractUrl(input)
 
       if (url.includes('/v1/oauth/token')) {
         tokenRefreshCalls += 1
@@ -296,12 +339,7 @@ describe('auth.loader', () => {
     let tokenRefreshCalls = 0
 
     globalThis.fetch = mock((input: any) => {
-      const url =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.toString()
-            : input.url
+      const url = extractUrl(input)
       if (url.includes('/v1/oauth/token')) {
         tokenRefreshCalls += 1
         return Promise.resolve(new Response('Forbidden', { status: 403 }))
@@ -376,19 +414,8 @@ describe('auth.loader', () => {
   test('concurrent expired token refresh should deduplicate to a single token request', async () => {
     let tokenRefreshCount = 0
 
-    // @ts-expect-error — mock override for testing
-    globalThis.setTimeout = mock((handler: () => unknown) => {
-      handler()
-      return 0
-    })
-
-    globalThis.fetch = mock((input: any, init: any) => {
-      const url =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.toString()
-            : input.url
+    globalThis.fetch = mock((input: any) => {
+      const url = extractUrl(input)
 
       if (url.includes('/v1/oauth/token')) {
         tokenRefreshCount++
@@ -407,42 +434,8 @@ describe('auth.loader', () => {
       return Promise.resolve(new Response(null, { status: 200 }))
     }) as unknown as typeof fetch
 
-    const mockClient = createMockClient()
-    const plugin = await getPlugin(mockClient)
-    const result = await plugin.auth.loader(
-      () =>
-        Promise.resolve({
-          type: 'oauth',
-          access: 'expired-token',
-          refresh: 'old-refresh',
-          expires: Date.now() - 1000,
-        }),
-      { models: {} },
-    )
-
-    // Fire 5 concurrent requests, all with expired token
-    await Promise.all([
-      result.fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        body: '{}',
-      }),
-      result.fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        body: '{}',
-      }),
-      result.fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        body: '{}',
-      }),
-      result.fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        body: '{}',
-      }),
-      result.fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        body: '{}',
-      }),
-    ])
+    const { result } = await setupExpiredTokenLoader()
+    await fireConcurrentFetches(result)
 
     // With deduplication, only ONE refresh request should be made, not 5
     expect(tokenRefreshCount).toBe(1)
@@ -451,19 +444,8 @@ describe('auth.loader', () => {
   test('concurrent refresh with token rotation should not cause cascading failures', async () => {
     const usedRefreshTokens = new Set<string>()
 
-    // @ts-expect-error — mock override for testing
-    globalThis.setTimeout = mock((handler: () => unknown) => {
-      handler()
-      return 0
-    })
-
     globalThis.fetch = mock((input: any, init: any) => {
-      const url =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.toString()
-            : input.url
+      const url = extractUrl(input)
 
       if (url.includes('/v1/oauth/token')) {
         const body = JSON.parse(init?.body)
@@ -495,68 +477,18 @@ describe('auth.loader', () => {
       return Promise.resolve(new Response(null, { status: 200 }))
     }) as unknown as typeof fetch
 
-    const mockClient = createMockClient()
-    const plugin = await getPlugin(mockClient)
-    const result = await plugin.auth.loader(
-      () =>
-        Promise.resolve({
-          type: 'oauth',
-          access: 'expired-token',
-          refresh: 'old-refresh',
-          expires: Date.now() - 1000,
-        }),
-      { models: {} },
-    )
+    const { result } = await setupExpiredTokenLoader()
 
     // Fire 5 concurrent requests — ALL should succeed because only one refresh
     // fires and the rest reuse its result
-    const outcomes = await Promise.all([
-      result
-        .fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          body: '{}',
-        })
-        .then(
+    const outcomes = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        result.fetch(MESSAGES_URL, EMPTY_POST).then(
           () => 'ok' as const,
           () => 'fail' as const,
         ),
-      result
-        .fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          body: '{}',
-        })
-        .then(
-          () => 'ok' as const,
-          () => 'fail' as const,
-        ),
-      result
-        .fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          body: '{}',
-        })
-        .then(
-          () => 'ok' as const,
-          () => 'fail' as const,
-        ),
-      result
-        .fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          body: '{}',
-        })
-        .then(
-          () => 'ok' as const,
-          () => 'fail' as const,
-        ),
-      result
-        .fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          body: '{}',
-        })
-        .then(
-          () => 'ok' as const,
-          () => 'fail' as const,
-        ),
-    ])
+      ),
+    )
 
     // With deduplication, all callers share the single successful refresh.
     // Without it, 4 out of 5 get 401 from the rotated-away token → cascading failures.
@@ -564,19 +496,8 @@ describe('auth.loader', () => {
   })
 
   test('concurrent refresh should persist tokens exactly once', async () => {
-    // @ts-expect-error — mock override for testing
-    globalThis.setTimeout = mock((handler: () => unknown) => {
-      handler()
-      return 0
-    })
-
     globalThis.fetch = mock((input: any) => {
-      const url =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.toString()
-            : input.url
+      const url = extractUrl(input)
 
       if (url.includes('/v1/oauth/token')) {
         return Promise.resolve(
@@ -594,41 +515,8 @@ describe('auth.loader', () => {
       return Promise.resolve(new Response(null, { status: 200 }))
     }) as unknown as typeof fetch
 
-    const mockClient = createMockClient()
-    const plugin = await getPlugin(mockClient)
-    const result = await plugin.auth.loader(
-      () =>
-        Promise.resolve({
-          type: 'oauth',
-          access: 'expired-token',
-          refresh: 'old-refresh',
-          expires: Date.now() - 1000,
-        }),
-      { models: {} },
-    )
-
-    await Promise.all([
-      result.fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        body: '{}',
-      }),
-      result.fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        body: '{}',
-      }),
-      result.fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        body: '{}',
-      }),
-      result.fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        body: '{}',
-      }),
-      result.fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        body: '{}',
-      }),
-    ])
+    const { mockClient, result } = await setupExpiredTokenLoader()
+    await fireConcurrentFetches(result)
 
     // With deduplication, client.auth.set should be called exactly once.
     // Without it, each concurrent refresh calls auth.set independently → 5 calls.
@@ -639,12 +527,7 @@ describe('auth.loader', () => {
     let capturedUrl: string | undefined
 
     globalThis.fetch = mock((input: any) => {
-      capturedUrl =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.toString()
-            : input.url
+      capturedUrl = extractUrl(input)
       return Promise.resolve(new Response(null, { status: 200 }))
     }) as unknown as typeof fetch
 

@@ -4,3 +4,7 @@ dist/
 # for now...
 .opencode/
 .claude/
+
+# mitmproxy capture files (binary, large)
+*.flow
+*.flow.log
