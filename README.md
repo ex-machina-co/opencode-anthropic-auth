@@ -41,7 +41,18 @@ For Claude Pro/Max authentication, the plugin:
 2. Exchanges the authorization code for access and refresh tokens
 3. Automatically refreshes expired tokens
 4. Injects the required OAuth headers and beta flags into API requests
-5. Zeros out model costs (since usage is covered by the subscription)
+5. Sanitizes the system prompt for compatibility (see below)
+6. Zeros out model costs (since usage is covered by the subscription)
+
+### System Prompt Sanitization
+
+The Anthropic API for Max subscriptions requires the system prompt to identify as Claude Code. The plugin rewrites the system prompt on each request using an **anchor-based** approach that minimizes what gets changed:
+
+1. **Identity swap** — The OpenCode identity line is removed and replaced with the Claude Code identity.
+2. **Paragraph removal by anchor** — Any paragraph containing a known URL anchor (e.g. `github.com/anomalyco/opencode`, `opencode.ai/docs`) is removed entirely. This is resilient to upstream rewording — as long as the anchor URL appears somewhere in the paragraph, the removal works regardless of surrounding text changes.
+3. **Inline text replacements** — Short branded strings inside paragraphs we want to keep are replaced (e.g. "OpenCode" → "the assistant" in the professional objectivity section).
+
+Everything else in the system prompt is preserved: tone/style guidance, task management instructions, tool usage policy, environment info, skills, user/project instructions, and file paths containing "opencode".
 
 ## Development
 
