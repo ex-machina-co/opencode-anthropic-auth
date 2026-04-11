@@ -18,7 +18,7 @@
     "extract": "bun scripts/extract-system-prompt.ts",
     "test": "bun test",
     "types": "tsc",
-    "format": "biome format --write .",
+    "format": "biome check --write --unsafe",
     "format:check": "biome format .",
     "lint": "biome lint .",
     "change": "changeset",

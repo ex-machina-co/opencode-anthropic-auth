@@ -1,4 +1,6 @@
+import { buildBillingHeaderValue } from './cch'
 import {
+  CLAUDE_CODE_ENTRYPOINT,
   CLAUDE_CODE_IDENTITY,
   OPENCODE_IDENTITY,
   PARAGRAPH_REMOVAL_ANCHORS,
@@ -328,6 +330,17 @@ export function prependClaudeCodeIdentity(system: unknown): SystemBlock[] {
 export function rewriteRequestBody(body: string): string {
   try {
     const parsed = JSON.parse(body)
+    const billingHeader =
+      Array.isArray(parsed.messages) &&
+      parsed.messages.some(
+        (message: { role?: string }) => message.role === 'user',
+      )
+        ? buildBillingHeaderValue(
+            parsed.messages,
+            undefined,
+            CLAUDE_CODE_ENTRYPOINT,
+          )
+        : null
 
     // Sanitize system prompt and prepend Claude Code identity
     parsed.system = prependClaudeCodeIdentity(parsed.system)
@@ -363,6 +376,15 @@ export function rewriteRequestBody(body: string): string {
           }
         }
       }
+    }
+
+    const identityBlock = parsed.system[0]
+    if (
+      billingHeader &&
+      identityBlock?.type === 'text' &&
+      identityBlock.text === CLAUDE_CODE_IDENTITY
+    ) {
+      identityBlock.text = `${billingHeader}\n\n${CLAUDE_CODE_IDENTITY}`
     }
 
     // Prefix tool names

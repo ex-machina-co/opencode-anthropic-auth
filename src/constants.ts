@@ -31,7 +31,12 @@ export const OPENCODE_IDENTITY =
 export const CLAUDE_CODE_IDENTITY =
   "You are a Claude agent, built on Anthropic's Claude Agent SDK."
 
-export const USER_AGENT = 'claude-cli/2.1.2 (external, cli)'
+export const CCH_SALT = '59cf53e54c78'
+export const CCH_POSITIONS = [4, 7, 20]
+export const CLAUDE_CODE_VERSION = '2.1.87'
+export const CLAUDE_CODE_ENTRYPOINT = 'sdk-cli'
+
+export const USER_AGENT = 'claude-cli/2.1.87 (external, cli)'
 
 /**
  * Anchors that identify paragraphs to remove from the system prompt.

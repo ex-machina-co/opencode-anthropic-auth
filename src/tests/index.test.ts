@@ -210,7 +210,7 @@ describe('auth.loader', () => {
     // After relocation, system should only contain the identity block
     expect(parsedBody.system).toHaveLength(1)
     expect(parsedBody.system[0].text).toBe(
-      "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+      "x-anthropic-billing-header: cc_version=2.1.87.6ff; cc_entrypoint=sdk-cli; cch=4ffc3;\n\nYou are a Claude agent, built on Anthropic's Claude Agent SDK.",
     )
     // Non-core system text relocated to first user message
     expect(parsedBody.messages[0].content).toContain(

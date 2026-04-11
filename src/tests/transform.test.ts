@@ -707,11 +707,15 @@ describe('rewriteRequestBody', () => {
     expect(result.system).toMatchInlineSnapshot(`
       [
         {
-          "text": "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+          "text": 
+      "x-anthropic-billing-header: cc_version=2.1.87.1c6; cc_entrypoint=sdk-cli; cch=ffa5e;
+
+      You are a Claude agent, built on Anthropic's Claude Agent SDK."
+      ,
           "type": "text",
         },
       ]
-    `)
+      `)
 
     // Non-core system text relocated to first user message
     const userContent = result.messages
@@ -764,7 +768,10 @@ describe('rewriteRequestBody', () => {
 
     // System should only contain the identity block
     expect(result.system).toHaveLength(1)
-    expect(result.system[0].text).toBe(CLAUDE_CODE_IDENTITY)
+    expect(result.system[0].text).toBe(
+      'x-anthropic-billing-header: cc_version=2.1.87.16a; cc_entrypoint=sdk-cli; cch=2cf24;\n\n' +
+        CLAUDE_CODE_IDENTITY,
+    )
 
     // Non-core text relocated to first user message (string content)
     expect(result.messages[0].content).toContain(
@@ -791,7 +798,10 @@ describe('rewriteRequestBody', () => {
 
     // System should only contain the identity block
     expect(result.system).toHaveLength(1)
-    expect(result.system[0].text).toBe(CLAUDE_CODE_IDENTITY)
+    expect(result.system[0].text).toBe(
+      'x-anthropic-billing-header: cc_version=2.1.87.16a; cc_entrypoint=sdk-cli; cch=2cf24;\n\n' +
+        CLAUDE_CODE_IDENTITY,
+    )
 
     // Relocated content prepended as first content block
     expect(result.messages[0].content[0].type).toBe('text')
@@ -826,7 +836,10 @@ describe('rewriteRequestBody', () => {
     const result = JSON.parse(rewriteRequestBody(body))
 
     expect(result.system).toHaveLength(1)
-    expect(result.system[0].text).toBe(CLAUDE_CODE_IDENTITY)
+    expect(result.system[0].text).toBe(
+      'x-anthropic-billing-header: cc_version=2.1.87.201; cc_entrypoint=sdk-cli; cch=8f434;\n\n' +
+        CLAUDE_CODE_IDENTITY,
+    )
 
     // All three blocks joined with \n\n and prepended to user message
     const userContent = result.messages[0].content

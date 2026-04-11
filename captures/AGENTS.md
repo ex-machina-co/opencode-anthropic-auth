@@ -4,10 +4,10 @@ This directory contains system prompts captured from Claude Code and OpenCode vi
 
 ## What's here
 
-| File | Description |
-|------|-------------|
-| `claude-code-v2.1.87.txt` | Claude Code v2.1.87 system prompt (captured 2026-04-08) |
-| `opencode-v1.4.0.txt` | OpenCode v1.4.0 system prompt, as transformed by the proxy (captured 2026-04-08) |
+| File                      | Description                                                                      |
+|---------------------------|----------------------------------------------------------------------------------|
+| `claude-code-v2.1.87.txt` | Claude Code v2.1.87 system prompt (captured 2026-04-08)                          |
+| `opencode-v1.4.0.txt`     | OpenCode v1.4.0 system prompt, as transformed by the proxy (captured 2026-04-08) |
 
 Naming convention: `<tool>-v<version>.txt`
 

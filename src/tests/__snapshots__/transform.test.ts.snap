@@ -282,7 +282,11 @@ Hello"
   ],
   "system": [
     {
-      "text": "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+      "text": 
+"x-anthropic-billing-header: cc_version=2.1.87.16a; cc_entrypoint=sdk-cli; cch=185f8;
+
+You are a Claude agent, built on Anthropic's Claude Agent SDK."
+,
       "type": "text",
     },
   ],
