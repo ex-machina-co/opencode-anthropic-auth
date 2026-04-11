@@ -7,6 +7,7 @@ import {
 } from '../constants'
 import {
   createStrippedStream,
+  experimentalKeepSystemPrompt,
   isInsecure,
   mergeBetaHeaders,
   mergeHeaders,
@@ -407,6 +408,43 @@ describe('isInsecure', () => {
     process.env.ANTHROPIC_BASE_URL = 'https://proxy.local'
     process.env.ANTHROPIC_INSECURE = 'yes'
     expect(isInsecure()).toBe(false)
+  })
+})
+
+describe('experimentalKeepSystemPrompt', () => {
+  const originalKeep = process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT
+
+  afterEach(() => {
+    if (originalKeep === undefined) {
+      delete process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT
+    } else {
+      process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = originalKeep
+    }
+  })
+
+  test('returns false when env var is not set', () => {
+    delete process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT
+    expect(experimentalKeepSystemPrompt()).toBe(false)
+  })
+
+  test('returns true when set to "1"', () => {
+    process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = '1'
+    expect(experimentalKeepSystemPrompt()).toBe(true)
+  })
+
+  test('returns true when set to "true"', () => {
+    process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = 'true'
+    expect(experimentalKeepSystemPrompt()).toBe(true)
+  })
+
+  test('returns false for other values like "yes"', () => {
+    process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = 'yes'
+    expect(experimentalKeepSystemPrompt()).toBe(false)
+  })
+
+  test('trims whitespace', () => {
+    process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = '  true  '
+    expect(experimentalKeepSystemPrompt()).toBe(true)
   })
 })
 
@@ -847,6 +885,98 @@ describe('rewriteRequestBody', () => {
     expect(userContent).toContain('Second block')
     expect(userContent).toContain('Third block')
     expect(userContent).toContain('First block\n\nSecond block\n\nThird block')
+  })
+
+  describe('with EXPERIMENTAL_KEEP_SYSTEM_PROMPT=1', () => {
+    const originalKeep = process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT
+
+    afterEach(() => {
+      if (originalKeep === undefined) {
+        delete process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT
+      } else {
+        process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = originalKeep
+      }
+    })
+
+    test('keeps non-core system blocks in system[] instead of relocating', () => {
+      process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = '1'
+      const body = JSON.stringify({
+        system: [
+          { type: 'text', text: 'Block A instructions' },
+          { type: 'text', text: 'Block B instructions' },
+        ],
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: 'hello' }],
+          },
+        ],
+      })
+      const result = JSON.parse(rewriteRequestBody(body))
+
+      // System should retain all blocks (identity + sanitized blocks)
+      expect(result.system.length).toBeGreaterThan(1)
+      expect(result.system[0].text).toContain(CLAUDE_CODE_IDENTITY)
+      expect(result.system[1].text).toBe('Block A instructions')
+      expect(result.system[2].text).toBe('Block B instructions')
+
+      // User message should NOT have system text prepended
+      expect(result.messages[0].content).toHaveLength(1)
+      expect(result.messages[0].content[0].text).toBe('hello')
+    })
+
+    test('still sanitizes system text', () => {
+      process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = '1'
+      const body = JSON.stringify({
+        system: `${OPENCODE_IDENTITY}\n\nSome instructions.\n\nVisit github.com/anomalyco/opencode for help.`,
+        messages: [{ role: 'user', content: 'hello' }],
+      })
+      const result = JSON.parse(rewriteRequestBody(body))
+
+      // Identity block is Claude Code's
+      expect(result.system[0].text).toContain(CLAUDE_CODE_IDENTITY)
+      // Sanitized: OpenCode identity removed, anchor paragraph removed
+      const allText = result.system
+        .map((b: { text: string }) => b.text)
+        .join(' ')
+      expect(allText).not.toContain(OPENCODE_IDENTITY)
+      expect(allText).not.toContain('github.com/anomalyco/opencode')
+      expect(allText).toContain('Some instructions.')
+    })
+
+    test('still adds billing header', () => {
+      process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = '1'
+      const body = JSON.stringify({
+        system: 'Custom instructions.',
+        messages: [{ role: 'user', content: 'hello' }],
+      })
+      const result = JSON.parse(rewriteRequestBody(body))
+
+      expect(result.system[0].text).toContain('x-anthropic-billing-header')
+      expect(result.system[0].text).toContain(CLAUDE_CODE_IDENTITY)
+    })
+
+    test('still prefixes tool names', () => {
+      process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = '1'
+      const body = JSON.stringify({
+        tools: [{ name: 'bash', type: 'function' }],
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: 'hello' }],
+          },
+          {
+            role: 'assistant',
+            content: [{ type: 'tool_use', name: 'bash', id: '1' }],
+          },
+        ],
+        system: 'Instructions.',
+      })
+      const result = JSON.parse(rewriteRequestBody(body))
+
+      expect(result.tools[0].name).toBe('mcp_bash')
+      expect(result.messages[1].content[0].name).toBe('mcp_bash')
+    })
   })
 })
 

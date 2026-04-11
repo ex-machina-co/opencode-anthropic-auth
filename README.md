@@ -33,6 +33,16 @@ The plugin provides three authentication options:
 - **Create an API Key** - OAuth flow via `console.anthropic.com` that creates an API key on your behalf.
 - **Manually enter API Key** - Standard API key entry for users who already have one.
 
+## Configuration
+
+The plugin supports the following environment variables:
+
+| Variable                          | Description                                                                                                                                                                                 |
+|-----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `ANTHROPIC_BASE_URL`              | Override the API endpoint URL (e.g. for proxying). Must be a valid HTTP(S) URL.                                                                                                             |
+| `ANTHROPIC_INSECURE`              | Set to `1` or `true` to skip TLS certificate verification. Only effective when `ANTHROPIC_BASE_URL` is also set.                                                                            |
+| `EXPERIMENTAL_KEEP_SYSTEM_PROMPT` | Set to `1` or `true` to keep the sanitized system prompt in the `system[]` field instead of relocating it to a user message. See [System Prompt Sanitization](#system-prompt-sanitization). |
+
 ## How It Works
 
 For Claude Pro/Max authentication, the plugin:
@@ -53,6 +63,9 @@ The Anthropic API for Max subscriptions has specific requirements for the system
 3. **Inline text replacements** — Short branded strings inside paragraphs we want to keep are replaced (e.g. "OpenCode" → "the assistant" in the professional objectivity section).
 
 Everything else in the system prompt is preserved: tone/style guidance, task management instructions, tool usage policy, environment info, skills, user/project instructions, and file paths containing "opencode". The system prompt is then **split** and only the billing header and identity line are left in the system prompt. The remainder is moved into a user message to bypass system prompt checks.
+
+> [!NOTE]
+> Set `EXPERIMENTAL_KEEP_SYSTEM_PROMPT=1` to skip the relocation step. The sanitized system prompt will remain in `system[]` in its entirety. This may cause API rejections for OAuth-authenticated requests.
 
 ## Development
 

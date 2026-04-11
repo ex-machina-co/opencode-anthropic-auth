@@ -145,6 +145,16 @@ export function isInsecure(): boolean {
 }
 
 /**
+ * Check if system prompt relocation should be skipped.
+ * When enabled, sanitized system blocks stay in system[] instead of
+ * being moved to the first user message.
+ */
+export function experimentalKeepSystemPrompt(): boolean {
+  const raw = process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT?.trim()
+  return raw === '1' || raw === 'true'
+}
+
+/**
  * Parse ANTHROPIC_BASE_URL from the environment.
  * Returns a valid HTTP(S) URL or null if unset/invalid.
  */
@@ -350,7 +360,11 @@ export function rewriteRequestBody(body: string): string {
     // Third-party system prompts trigger a 400 rejection when they
     // appear in `system[]`. Keep only the identity block in `system[]`
     // and prepend everything else to the first user message.
-    if (Array.isArray(parsed.system) && parsed.system.length > 1) {
+    if (
+      !experimentalKeepSystemPrompt() &&
+      Array.isArray(parsed.system) &&
+      parsed.system.length > 1
+    ) {
       const kept = [parsed.system[0]] // identity block
       const movedTexts: string[] = []
 
