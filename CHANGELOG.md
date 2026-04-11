@@ -1,5 +1,13 @@
 # @ex-machina/opencode-anthropic-auth
 
+## 1.5.1
+
+### Patch Changes
+
+- [#76](https://github.com/ex-machina-co/opencode-anthropic-auth/pull/76) [`d92609c`](https://github.com/ex-machina-co/opencode-anthropic-auth/commit/d92609c2c8168f9b80616f0269381126a02fe7c8) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Add in `EXPERIMENTAL_KEEP_SYSTEM_PROMPT` which allows users to
+  keep the sanitized prompt as a system prompt, instead of changing
+  it to a user propmt.
+
 ## 1.5.0
 
 ### Minor Changes
