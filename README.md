@@ -21,7 +21,7 @@ Add the plugin to your OpenCode configuration:
 
 ```json
 {
-  "plugin": ["@ex-machina/opencode-anthropic-auth@1.6.0"]
+  "plugin": ["@ex-machina/opencode-anthropic-auth@1.6.1"]
 }
 ```
 
