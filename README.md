@@ -2,6 +2,11 @@
 
 An [OpenCode](https://github.com/anomalyco/opencode) plugin that provides Anthropic OAuth authentication, enabling Claude Pro/Max users to use their subscription directly with OpenCode.
 
+> [!IMPORTANT]
+> If you are seeing issues, please try to `rm -rf ~/.config/opencode` and check your `opencode.json` config to make sure you're on the latest version.
+>
+> Try this FIRST before making an Issue. Thanks!
+
 ## Usage
 
 Add the plugin to your OpenCode configuration:
