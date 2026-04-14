@@ -140,7 +140,21 @@ exports[`sanitizeSystemText – realistic prompt rewriteRequestBody output snaps
 {
   "messages": [
     {
-      "content": 
+      "content": "Hello",
+      "role": "user",
+    },
+  ],
+  "system": [
+    {
+      "text": "x-anthropic-billing-header: cc_version=2.1.87.16a; cc_entrypoint=sdk-cli; cch=185f8;",
+      "type": "text",
+    },
+    {
+      "text": "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+      "type": "text",
+    },
+    {
+      "text": 
 "You are an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
 
 IMPORTANT: You must NEVER generate or guess URLs for the user unless you are confident that the URLs are for helping the user with programming. You may use URLs provided by the user in their messages or local files.
@@ -273,19 +287,7 @@ Instructions from: /Users/user/project/.opencode/AGENTS.md
 
 This project uses Bun as the runtime and test runner.
 Run \`bun test\` to execute tests.
-Run \`bun run build\` to compile.
-
-Hello"
-,
-      "role": "user",
-    },
-  ],
-  "system": [
-    {
-      "text": 
-"x-anthropic-billing-header: cc_version=2.1.87.16a; cc_entrypoint=sdk-cli; cch=185f8;
-
-You are a Claude agent, built on Anthropic's Claude Agent SDK."
+Run \`bun run build\` to compile."
 ,
       "type": "text",
     },

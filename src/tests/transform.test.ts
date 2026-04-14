@@ -7,7 +7,6 @@ import {
 } from '../constants'
 import {
   createStrippedStream,
-  experimentalKeepSystemPrompt,
   isInsecure,
   mergeBetaHeaders,
   mergeHeaders,
@@ -406,43 +405,6 @@ describe('isInsecure', () => {
   })
 })
 
-describe('experimentalKeepSystemPrompt', () => {
-  const originalKeep = process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT
-
-  afterEach(() => {
-    if (originalKeep === undefined) {
-      delete process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT
-    } else {
-      process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = originalKeep
-    }
-  })
-
-  test('returns false when env var is not set', () => {
-    delete process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT
-    expect(experimentalKeepSystemPrompt()).toBe(false)
-  })
-
-  test('returns true when set to "1"', () => {
-    process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = '1'
-    expect(experimentalKeepSystemPrompt()).toBe(true)
-  })
-
-  test('returns true when set to "true"', () => {
-    process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = 'true'
-    expect(experimentalKeepSystemPrompt()).toBe(true)
-  })
-
-  test('returns false for other values like "yes"', () => {
-    process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = 'yes'
-    expect(experimentalKeepSystemPrompt()).toBe(false)
-  })
-
-  test('trims whitespace', () => {
-    process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = '  true  '
-    expect(experimentalKeepSystemPrompt()).toBe(true)
-  })
-})
-
 describe('createStrippedStream', () => {
   test('strips tool prefixes from streamed response body', async () => {
     const chunks = [
@@ -666,7 +628,10 @@ describe('rewriteRequestBody', () => {
     })
     const result = JSON.parse(rewriteRequestBody(body))
     expect(result.tools[0].name).toBe('mcp_Bash')
-    expect(result.system[0].text).toContain(CLAUDE_CODE_IDENTITY)
+    // system[0] = billing header, system[1] = identity, system[2] = rest
+    expect(result.system[0].text).toContain('x-anthropic-billing-header')
+    expect(result.system[1].text).toBe(CLAUDE_CODE_IDENTITY)
+    expect(result.system[2].text).toBe('You are a helpful assistant.')
   })
 
   test('handles missing system field', () => {
@@ -674,8 +639,10 @@ describe('rewriteRequestBody', () => {
       messages: [{ role: 'user', content: 'hi' }],
     })
     const result = JSON.parse(rewriteRequestBody(body))
-    expect(result.system).toHaveLength(1)
-    expect(result.system[0].text).toContain(CLAUDE_CODE_IDENTITY)
+    // system[0] = billing header, system[1] = identity (no rest block)
+    expect(result.system).toHaveLength(2)
+    expect(result.system[0].text).toContain('x-anthropic-billing-header')
+    expect(result.system[1].text).toBe(CLAUDE_CODE_IDENTITY)
   })
 
   test('returns original string on invalid JSON', () => {
@@ -698,9 +665,11 @@ describe('rewriteRequestBody', () => {
     //    [0] "You are OpenCode..." + generic content + "# Code References\n..."
     //    [1] "Additional context block"
     //
-    //  Expected output after relocation:
-    //    system = [identity block only]
-    //    Non-core system text relocated to first user message
+    //  Expected output (three-block layout):
+    //    system[0] = billing header
+    //    system[1] = identity
+    //    system[2..n] = sanitized system blocks
+    //    User messages are untouched.
 
     const systemPrompt = [
       'You are OpenCode, the best coding agent on the planet.',
@@ -735,86 +704,46 @@ describe('rewriteRequestBody', () => {
 
     const result = JSON.parse(rewriteRequestBody(body))
 
-    // System should only contain the identity block
-    expect(result.system).toHaveLength(1)
-    expect(result.system).toMatchInlineSnapshot(`
-      [
-        {
-          "text": 
-      "x-anthropic-billing-header: cc_version=2.1.87.1c6; cc_entrypoint=sdk-cli; cch=ffa5e;
+    // Three-block layout: billing header, identity, sanitized blocks
+    expect(result.system).toHaveLength(4)
+    expect(result.system[0].text).toContain('x-anthropic-billing-header')
+    expect(result.system[1].text).toBe(CLAUDE_CODE_IDENTITY)
+    expect(result.system[2].text).toContain('You have access to tools.')
+    expect(result.system[2].text).toContain('# Code References')
+    expect(result.system[2].text).not.toContain(OPENCODE_IDENTITY_PREFIX)
+    expect(result.system[3].text).toBe('Additional context block')
 
-      You are a Claude agent, built on Anthropic's Claude Agent SDK."
-      ,
-          "type": "text",
-        },
-      ]
-      `)
-
-    // Non-core system text relocated to first user message
-    const userContent = result.messages
-    expect(userContent).toMatchInlineSnapshot(`
-      [
-        {
-          "content": 
-      "You have access to tools.
-
-      # Code References
-
-      Here are some files.
-
-      Additional context block
-
-      Help me fix this bug"
-      ,
-          "role": "user",
-        },
-        {
-          "content": [
-            {
-              "id": "tool_1",
-              "name": "mcp_Bash",
-              "type": "tool_use",
-            },
-            {
-              "text": "Let me check",
-              "type": "text",
-            },
-          ],
-          "role": "assistant",
-        },
-      ]
-    `)
+    // User messages are untouched
+    expect(result.messages[0].content).toBe('Help me fix this bug')
+    expect(result.messages[1].content[0].name).toBe('mcp_Bash')
   })
 
   test('handles body with no messages array', () => {
     const body = JSON.stringify({ model: 'claude-3' })
     const result = JSON.parse(rewriteRequestBody(body))
-    expect(result.system[0].text).toContain(CLAUDE_CODE_IDENTITY)
+    // No messages → no billing header; system[0] = identity only
+    expect(result.system).toHaveLength(1)
+    expect(result.system[0].text).toBe(CLAUDE_CODE_IDENTITY)
   })
 
-  test('relocates non-core system entries to first user message (string content)', () => {
+  test('keeps system blocks in system[] (string content)', () => {
     const body = JSON.stringify({
       system: 'Custom instructions for the assistant.',
       messages: [{ role: 'user', content: 'hello' }],
     })
     const result = JSON.parse(rewriteRequestBody(body))
 
-    // System should only contain the identity block
-    expect(result.system).toHaveLength(1)
-    expect(result.system[0].text).toBe(
-      'x-anthropic-billing-header: cc_version=2.1.87.16a; cc_entrypoint=sdk-cli; cch=2cf24;\n\n' +
-        CLAUDE_CODE_IDENTITY,
-    )
+    // system[0] = billing, system[1] = identity, system[2] = rest
+    expect(result.system).toHaveLength(3)
+    expect(result.system[0].text).toContain('x-anthropic-billing-header')
+    expect(result.system[1].text).toBe(CLAUDE_CODE_IDENTITY)
+    expect(result.system[2].text).toBe('Custom instructions for the assistant.')
 
-    // Non-core text relocated to first user message (string content)
-    expect(result.messages[0].content).toContain(
-      'Custom instructions for the assistant.',
-    )
-    // Original user content preserved
-    expect(result.messages[0].content).toContain('hello')
+    // User message is untouched
+    expect(result.messages[0].content).toBe('hello')
   })
 
-  test('relocates non-core system entries to first user message (array content)', () => {
+  test('keeps system blocks in system[] (array content)', () => {
     const body = JSON.stringify({
       system: [
         { type: 'text', text: 'Block A instructions' },
@@ -829,19 +758,16 @@ describe('rewriteRequestBody', () => {
     })
     const result = JSON.parse(rewriteRequestBody(body))
 
-    // System should only contain the identity block
-    expect(result.system).toHaveLength(1)
-    expect(result.system[0].text).toBe(
-      'x-anthropic-billing-header: cc_version=2.1.87.16a; cc_entrypoint=sdk-cli; cch=2cf24;\n\n' +
-        CLAUDE_CODE_IDENTITY,
-    )
+    // system[0] = billing, system[1] = identity, system[2..3] = rest
+    expect(result.system).toHaveLength(4)
+    expect(result.system[0].text).toContain('x-anthropic-billing-header')
+    expect(result.system[1].text).toBe(CLAUDE_CODE_IDENTITY)
+    expect(result.system[2].text).toBe('Block A instructions')
+    expect(result.system[3].text).toBe('Block B instructions')
 
-    // Relocated content prepended as first content block
-    expect(result.messages[0].content[0].type).toBe('text')
-    expect(result.messages[0].content[0].text).toContain('Block A instructions')
-    expect(result.messages[0].content[0].text).toContain('Block B instructions')
-    // Original user content preserved
-    expect(result.messages[0].content[1].text).toBe('hello')
+    // User message is untouched
+    expect(result.messages[0].content).toHaveLength(1)
+    expect(result.messages[0].content[0].text).toBe('hello')
   })
 
   test('keeps system intact when no user messages exist', () => {
@@ -851,13 +777,13 @@ describe('rewriteRequestBody', () => {
     })
     const result = JSON.parse(rewriteRequestBody(body))
 
-    // With no user messages to relocate into, system stays as-is
+    // No user messages → no billing header; system[0] = identity, system[1] = rest
     expect(result.system).toHaveLength(2)
     expect(result.system[0].text).toBe(CLAUDE_CODE_IDENTITY)
     expect(result.system[1].text).toBe('Some instructions')
   })
 
-  test('relocates multiple non-core entries joined with double newline', () => {
+  test('keeps multiple system blocks as separate entries', () => {
     const body = JSON.stringify({
       system: [
         { type: 'text', text: 'First block' },
@@ -868,110 +794,16 @@ describe('rewriteRequestBody', () => {
     })
     const result = JSON.parse(rewriteRequestBody(body))
 
-    expect(result.system).toHaveLength(1)
-    expect(result.system[0].text).toBe(
-      'x-anthropic-billing-header: cc_version=2.1.87.201; cc_entrypoint=sdk-cli; cch=8f434;\n\n' +
-        CLAUDE_CODE_IDENTITY,
-    )
+    // system[0] = billing, system[1] = identity, system[2..4] = original blocks
+    expect(result.system).toHaveLength(5)
+    expect(result.system[0].text).toContain('x-anthropic-billing-header')
+    expect(result.system[1].text).toBe(CLAUDE_CODE_IDENTITY)
+    expect(result.system[2].text).toBe('First block')
+    expect(result.system[3].text).toBe('Second block')
+    expect(result.system[4].text).toBe('Third block')
 
-    // All three blocks joined with \n\n and prepended to user message
-    const userContent = result.messages[0].content
-    expect(userContent).toContain('First block')
-    expect(userContent).toContain('Second block')
-    expect(userContent).toContain('Third block')
-    expect(userContent).toContain('First block\n\nSecond block\n\nThird block')
-  })
-
-  describe('with EXPERIMENTAL_KEEP_SYSTEM_PROMPT=1', () => {
-    const originalKeep = process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT
-
-    afterEach(() => {
-      if (originalKeep === undefined) {
-        delete process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT
-      } else {
-        process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = originalKeep
-      }
-    })
-
-    test('keeps non-core system blocks in system[] instead of relocating', () => {
-      process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = '1'
-      const body = JSON.stringify({
-        system: [
-          { type: 'text', text: 'Block A instructions' },
-          { type: 'text', text: 'Block B instructions' },
-        ],
-        messages: [
-          {
-            role: 'user',
-            content: [{ type: 'text', text: 'hello' }],
-          },
-        ],
-      })
-      const result = JSON.parse(rewriteRequestBody(body))
-
-      // System should retain all blocks (identity + sanitized blocks)
-      expect(result.system.length).toBeGreaterThan(1)
-      expect(result.system[0].text).toContain(CLAUDE_CODE_IDENTITY)
-      expect(result.system[1].text).toBe('Block A instructions')
-      expect(result.system[2].text).toBe('Block B instructions')
-
-      // User message should NOT have system text prepended
-      expect(result.messages[0].content).toHaveLength(1)
-      expect(result.messages[0].content[0].text).toBe('hello')
-    })
-
-    test('still sanitizes system text', () => {
-      process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = '1'
-      const body = JSON.stringify({
-        system: `${OPENCODE_IDENTITY_PREFIX}\n\nSome instructions.\n\nVisit github.com/anomalyco/opencode for help.`,
-        messages: [{ role: 'user', content: 'hello' }],
-      })
-      const result = JSON.parse(rewriteRequestBody(body))
-
-      // Identity block is Claude Code's
-      expect(result.system[0].text).toContain(CLAUDE_CODE_IDENTITY)
-      // Sanitized: OpenCode identity removed, anchor paragraph removed
-      const allText = result.system
-        .map((b: { text: string }) => b.text)
-        .join(' ')
-      expect(allText).not.toContain(OPENCODE_IDENTITY_PREFIX)
-      expect(allText).not.toContain('github.com/anomalyco/opencode')
-      expect(allText).toContain('Some instructions.')
-    })
-
-    test('still adds billing header', () => {
-      process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = '1'
-      const body = JSON.stringify({
-        system: 'Custom instructions.',
-        messages: [{ role: 'user', content: 'hello' }],
-      })
-      const result = JSON.parse(rewriteRequestBody(body))
-
-      expect(result.system[0].text).toContain('x-anthropic-billing-header')
-      expect(result.system[0].text).toContain(CLAUDE_CODE_IDENTITY)
-    })
-
-    test('still prefixes tool names', () => {
-      process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = '1'
-      const body = JSON.stringify({
-        tools: [{ name: 'bash', type: 'function' }],
-        messages: [
-          {
-            role: 'user',
-            content: [{ type: 'text', text: 'hello' }],
-          },
-          {
-            role: 'assistant',
-            content: [{ type: 'tool_use', name: 'bash', id: '1' }],
-          },
-        ],
-        system: 'Instructions.',
-      })
-      const result = JSON.parse(rewriteRequestBody(body))
-
-      expect(result.tools[0].name).toBe('mcp_Bash')
-      expect(result.messages[1].content[0].name).toBe('mcp_Bash')
-    })
+    // User message is untouched
+    expect(result.messages[0].content).toBe('hi')
   })
 })
 
