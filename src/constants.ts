@@ -26,8 +26,7 @@ export const REQUIRED_BETAS = [
   'interleaved-thinking-2025-05-14',
 ]
 
-export const OPENCODE_IDENTITY =
-  'You are OpenCode, the best coding agent on the planet.'
+export const OPENCODE_IDENTITY_PREFIX = 'You are OpenCode'
 export const CLAUDE_CODE_IDENTITY =
   "You are a Claude agent, built on Anthropic's Claude Agent SDK."
 

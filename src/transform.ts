@@ -2,7 +2,7 @@ import { buildBillingHeaderValue } from './cch'
 import {
   CLAUDE_CODE_ENTRYPOINT,
   CLAUDE_CODE_IDENTITY,
-  OPENCODE_IDENTITY,
+  OPENCODE_IDENTITY_PREFIX,
   PARAGRAPH_REMOVAL_ANCHORS,
   REQUIRED_BETAS,
   TEXT_REPLACEMENTS,
@@ -98,46 +98,40 @@ export function setOAuthHeaders(
  * Add TOOL_PREFIX to tool names in the request body.
  * Prefixes both tool definitions and tool_use blocks in messages.
  */
-export function prefixToolNames(body: string): string {
-  try {
-    const parsed = JSON.parse(body)
-
-    if (parsed.tools && Array.isArray(parsed.tools)) {
-      parsed.tools = parsed.tools.map(
-        (tool: { name?: string; [k: string]: unknown }) => ({
-          ...tool,
-          name: tool.name ? prefixName(tool.name) : tool.name,
-        }),
-      )
-    }
-
-    if (parsed.messages && Array.isArray(parsed.messages)) {
-      parsed.messages = parsed.messages.map(
-        (msg: {
-          content?: Array<{
-            type: string
-            name?: string
-            [k: string]: unknown
-          }>
-          [k: string]: unknown
-        }) => {
-          if (msg.content && Array.isArray(msg.content)) {
-            msg.content = msg.content.map((block) => {
-              if (block.type === 'tool_use' && block.name) {
-                return { ...block, name: prefixName(block.name) }
-              }
-              return block
-            })
-          }
-          return msg
-        },
-      )
-    }
-
-    return JSON.stringify(parsed)
-  } catch {
-    return body
+export function prefixToolNames(parsed: Record<string, unknown>): string {
+  if (parsed.tools && Array.isArray(parsed.tools)) {
+    parsed.tools = parsed.tools.map(
+      (tool: { name?: string; [k: string]: unknown }) => ({
+        ...tool,
+        name: tool.name ? prefixName(tool.name) : tool.name,
+      }),
+    )
   }
+
+  if (parsed.messages && Array.isArray(parsed.messages)) {
+    parsed.messages = parsed.messages.map(
+      (msg: {
+        content?: Array<{
+          type: string
+          name?: string
+          [k: string]: unknown
+        }>
+        [k: string]: unknown
+      }) => {
+        if (msg.content && Array.isArray(msg.content)) {
+          msg.content = msg.content.map((block) => {
+            if (block.type === 'tool_use' && block.name) {
+              return { ...block, name: prefixName(block.name) }
+            }
+            return block
+          })
+        }
+        return msg
+      },
+    )
+  }
+
+  return JSON.stringify(parsed)
 }
 
 /**
@@ -244,7 +238,7 @@ export function rewriteUrl(input: FetchInput): {
 /**
  * Sanitize OpenCode-branded strings from the system prompt text.
  *
- * 1. Removes the OPENCODE_IDENTITY line.
+ * 1. Removes the OPENCODE_IDENTITY paragraph.
  * 2. Removes any paragraph (text between blank lines) that contains
  *    one of the PARAGRAPH_REMOVAL_ANCHORS — typically URLs that
  *    identify OpenCode-specific content.
@@ -256,17 +250,13 @@ export function rewriteUrl(input: FetchInput): {
  * somewhere in the paragraph, the removal works.
  */
 export function sanitizeSystemText(text: string): string {
-  if (!text.includes(OPENCODE_IDENTITY)) return text
-
   // Split into paragraphs (separated by one or more blank lines)
   const paragraphs = text.split(/\n\n+/)
 
   const filtered = paragraphs.filter((paragraph) => {
-    // Remove the identity line (may be its own paragraph or part of one)
-    if (paragraph.includes(OPENCODE_IDENTITY)) {
-      // If the paragraph is JUST the identity, drop it entirely
-      if (paragraph.trim() === OPENCODE_IDENTITY) return false
-      // Otherwise it's mixed — we'll handle inline below
+    if (paragraph.includes(OPENCODE_IDENTITY_PREFIX)) {
+      // If the paragraph contains the identity, drop it entirely
+      return false
     }
 
     // Remove paragraphs containing any removal anchor
@@ -278,9 +268,6 @@ export function sanitizeSystemText(text: string): string {
   })
 
   let result = filtered.join('\n\n')
-
-  // Remove the identity line if it was part of a larger paragraph
-  result = result.replace(OPENCODE_IDENTITY, '').replace(/\n{3,}/g, '\n\n')
 
   // Apply inline text replacements
   for (const rule of TEXT_REPLACEMENTS) {
@@ -417,40 +404,7 @@ export function rewriteRequestBody(body: string): string {
       identityBlock.text = `${billingHeader}\n\n${CLAUDE_CODE_IDENTITY}`
     }
 
-    // Prefix tool names
-    if (parsed.tools && Array.isArray(parsed.tools)) {
-      parsed.tools = parsed.tools.map(
-        (tool: { name?: string; [k: string]: unknown }) => ({
-          ...tool,
-          name: tool.name ? prefixName(tool.name) : tool.name,
-        }),
-      )
-    }
-
-    if (parsed.messages && Array.isArray(parsed.messages)) {
-      parsed.messages = parsed.messages.map(
-        (msg: {
-          content?: Array<{
-            type: string
-            name?: string
-            [k: string]: unknown
-          }>
-          [k: string]: unknown
-        }) => {
-          if (msg.content && Array.isArray(msg.content)) {
-            msg.content = msg.content.map((block) => {
-              if (block.type === 'tool_use' && block.name) {
-                return { ...block, name: prefixName(block.name) }
-              }
-              return block
-            })
-          }
-          return msg
-        },
-      )
-    }
-
-    return JSON.stringify(parsed)
+    return prefixToolNames(parsed)
   } catch {
     return body
   }

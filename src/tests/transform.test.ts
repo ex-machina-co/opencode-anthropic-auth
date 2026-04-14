@@ -2,7 +2,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test'
 import dedent from 'dedent'
 import {
   CLAUDE_CODE_IDENTITY,
-  OPENCODE_IDENTITY,
+  OPENCODE_IDENTITY_PREFIX,
   REQUIRED_BETAS,
 } from '../constants'
 import {
@@ -140,19 +140,19 @@ describe('setOAuthHeaders', () => {
 
 describe('prefixToolNames', () => {
   test('prefixes tool definition names', () => {
-    const body = JSON.stringify({
+    const body = {
       tools: [
         { name: 'read_file', type: 'function' },
         { name: 'write_file', type: 'function' },
       ],
-    })
+    }
     const result = JSON.parse(prefixToolNames(body))
     expect(result.tools[0].name).toBe('mcp_Read_file')
     expect(result.tools[1].name).toBe('mcp_Write_file')
   })
 
   test('prefixes tool_use block names in messages', () => {
-    const body = JSON.stringify({
+    const body = {
       messages: [
         {
           role: 'assistant',
@@ -162,21 +162,21 @@ describe('prefixToolNames', () => {
           ],
         },
       ],
-    })
+    }
     const result = JSON.parse(prefixToolNames(body))
     expect(result.messages[0].content[0].name).toBe('mcp_Bash')
     expect(result.messages[0].content[1].type).toBe('text')
   })
 
   test('does not prefix non-tool_use blocks', () => {
-    const body = JSON.stringify({
+    const body = {
       messages: [
         {
           role: 'user',
           content: [{ type: 'text', text: 'hello' }],
         },
       ],
-    })
+    }
     const result = JSON.parse(prefixToolNames(body))
     expect(result.messages[0].content[0]).toEqual({
       type: 'text',
@@ -185,20 +185,15 @@ describe('prefixToolNames', () => {
   })
 
   test('handles missing tools and messages gracefully', () => {
-    const body = JSON.stringify({ model: 'claude-3' })
+    const body = { model: 'claude-3' }
     const result = JSON.parse(prefixToolNames(body))
     expect(result.model).toBe('claude-3')
   })
 
-  test('returns original string on invalid JSON', () => {
-    const body = 'not valid json'
-    expect(prefixToolNames(body)).toBe(body)
-  })
-
   test('handles tools without names', () => {
-    const body = JSON.stringify({
+    const body = {
       tools: [{ type: 'function' }],
-    })
+    }
     const result = JSON.parse(prefixToolNames(body))
     expect(result.tools[0].name).toBeUndefined()
   })
@@ -634,13 +629,13 @@ describe('prependClaudeCodeIdentity', () => {
     const system = [
       {
         type: 'text',
-        text: `${OPENCODE_IDENTITY}\nstuff\n# Code References\nrest`,
+        text: `${OPENCODE_IDENTITY_PREFIX}\nstuff\n\n# Code References\nrest`,
       },
       { type: 'text', text: 'other block' },
     ]
     const result = prependClaudeCodeIdentity(system)
     expect(result[0]?.text).toBe(CLAUDE_CODE_IDENTITY)
-    expect(result[1]?.text).not.toContain(OPENCODE_IDENTITY)
+    expect(result[1]?.text).not.toContain(OPENCODE_IDENTITY_PREFIX)
     expect(result[1]?.text).toContain('# Code References')
   })
 
@@ -692,7 +687,7 @@ describe('rewriteRequestBody', () => {
     const onError = mock(() => {})
     const body = JSON.stringify({
       messages: [],
-      system: `${OPENCODE_IDENTITY}\nsome other content`,
+      system: `${OPENCODE_IDENTITY_PREFIX}\nsome other content`,
     })
     rewriteRequestBody(body)
     expect(onError).not.toHaveBeenCalled()
@@ -928,7 +923,7 @@ describe('rewriteRequestBody', () => {
     test('still sanitizes system text', () => {
       process.env.EXPERIMENTAL_KEEP_SYSTEM_PROMPT = '1'
       const body = JSON.stringify({
-        system: `${OPENCODE_IDENTITY}\n\nSome instructions.\n\nVisit github.com/anomalyco/opencode for help.`,
+        system: `${OPENCODE_IDENTITY_PREFIX}\n\nSome instructions.\n\nVisit github.com/anomalyco/opencode for help.`,
         messages: [{ role: 'user', content: 'hello' }],
       })
       const result = JSON.parse(rewriteRequestBody(body))
@@ -939,7 +934,7 @@ describe('rewriteRequestBody', () => {
       const allText = result.system
         .map((b: { text: string }) => b.text)
         .join(' ')
-      expect(allText).not.toContain(OPENCODE_IDENTITY)
+      expect(allText).not.toContain(OPENCODE_IDENTITY_PREFIX)
       expect(allText).not.toContain('github.com/anomalyco/opencode')
       expect(allText).toContain('Some instructions.')
     })
