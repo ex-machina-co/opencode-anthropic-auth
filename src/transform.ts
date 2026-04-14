@@ -23,6 +23,10 @@ function prefixName(name: string): string {
  * Reverse prefixName: strip TOOL_PREFIX and restore the original leading case.
  */
 function unprefixName(name: string): string {
+  // StructuredOutput is still used as StructuredOutput
+  if (name === 'StructuredOutput') {
+    return name
+  }
   return `${name.charAt(0).toLowerCase()}${name.slice(1)}`
 }
 
