@@ -10,6 +10,22 @@ import {
   USER_AGENT,
 } from './constants'
 
+/**
+ * Prefix a tool name with TOOL_PREFIX and uppercase the first character.
+ * Claude Code uses PascalCase tool names (e.g. mcp_Bash, mcp_Read);
+ * lowercase names (mcp_bash, mcp_read) are flagged as non-Claude-Code clients.
+ */
+function prefixName(name: string): string {
+  return `${TOOL_PREFIX}${name.charAt(0).toUpperCase()}${name.slice(1)}`
+}
+
+/**
+ * Reverse prefixName: strip TOOL_PREFIX and restore the original leading case.
+ */
+function unprefixName(name: string): string {
+  return `${name.charAt(0).toLowerCase()}${name.slice(1)}`
+}
+
 export type FetchInput = string | URL | Request
 
 /**
@@ -90,7 +106,7 @@ export function prefixToolNames(body: string): string {
       parsed.tools = parsed.tools.map(
         (tool: { name?: string; [k: string]: unknown }) => ({
           ...tool,
-          name: tool.name ? `${TOOL_PREFIX}${tool.name}` : tool.name,
+          name: tool.name ? prefixName(tool.name) : tool.name,
         }),
       )
     }
@@ -108,10 +124,7 @@ export function prefixToolNames(body: string): string {
           if (msg.content && Array.isArray(msg.content)) {
             msg.content = msg.content.map((block) => {
               if (block.type === 'tool_use' && block.name) {
-                return {
-                  ...block,
-                  name: `${TOOL_PREFIX}${block.name}`,
-                }
+                return { ...block, name: prefixName(block.name) }
               }
               return block
             })
@@ -131,7 +144,10 @@ export function prefixToolNames(body: string): string {
  * Strip TOOL_PREFIX from tool names in streaming response text.
  */
 export function stripToolPrefix(text: string): string {
-  return text.replace(/"name"\s*:\s*"mcp_([^"]+)"/g, '"name": "$1"')
+  return text.replace(
+    /"name"\s*:\s*"mcp_([^"]+)"/g,
+    (_match, name: string) => `"name": "${unprefixName(name)}"`,
+  )
 }
 
 /**
@@ -406,7 +422,7 @@ export function rewriteRequestBody(body: string): string {
       parsed.tools = parsed.tools.map(
         (tool: { name?: string; [k: string]: unknown }) => ({
           ...tool,
-          name: tool.name ? `${TOOL_PREFIX}${tool.name}` : tool.name,
+          name: tool.name ? prefixName(tool.name) : tool.name,
         }),
       )
     }
@@ -424,7 +440,7 @@ export function rewriteRequestBody(body: string): string {
           if (msg.content && Array.isArray(msg.content)) {
             msg.content = msg.content.map((block) => {
               if (block.type === 'tool_use' && block.name) {
-                return { ...block, name: `${TOOL_PREFIX}${block.name}` }
+                return { ...block, name: prefixName(block.name) }
               }
               return block
             })

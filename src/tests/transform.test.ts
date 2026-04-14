@@ -147,8 +147,8 @@ describe('prefixToolNames', () => {
       ],
     })
     const result = JSON.parse(prefixToolNames(body))
-    expect(result.tools[0].name).toBe('mcp_read_file')
-    expect(result.tools[1].name).toBe('mcp_write_file')
+    expect(result.tools[0].name).toBe('mcp_Read_file')
+    expect(result.tools[1].name).toBe('mcp_Write_file')
   })
 
   test('prefixes tool_use block names in messages', () => {
@@ -164,7 +164,7 @@ describe('prefixToolNames', () => {
       ],
     })
     const result = JSON.parse(prefixToolNames(body))
-    expect(result.messages[0].content[0].name).toBe('mcp_bash')
+    expect(result.messages[0].content[0].name).toBe('mcp_Bash')
     expect(result.messages[0].content[1].type).toBe('text')
   })
 
@@ -670,7 +670,7 @@ describe('rewriteRequestBody', () => {
       system: 'You are a helpful assistant.',
     })
     const result = JSON.parse(rewriteRequestBody(body))
-    expect(result.tools[0].name).toBe('mcp_bash')
+    expect(result.tools[0].name).toBe('mcp_Bash')
     expect(result.system[0].text).toContain(CLAUDE_CODE_IDENTITY)
   })
 
@@ -777,7 +777,7 @@ describe('rewriteRequestBody', () => {
           "content": [
             {
               "id": "tool_1",
-              "name": "mcp_bash",
+              "name": "mcp_Bash",
               "type": "tool_use",
             },
             {
@@ -974,8 +974,8 @@ describe('rewriteRequestBody', () => {
       })
       const result = JSON.parse(rewriteRequestBody(body))
 
-      expect(result.tools[0].name).toBe('mcp_bash')
-      expect(result.messages[1].content[0].name).toBe('mcp_bash')
+      expect(result.tools[0].name).toBe('mcp_Bash')
+      expect(result.messages[1].content[0].name).toBe('mcp_Bash')
     })
   })
 })

@@ -206,7 +206,7 @@ describe('auth.loader', () => {
 
     const parsedBody = JSON.parse(capturedBody!)
     // Tool name should be prefixed
-    expect(parsedBody.tools[0].name).toBe('mcp_bash')
+    expect(parsedBody.tools[0].name).toBe('mcp_Bash')
     // After relocation, system should only contain the identity block
     expect(parsedBody.system).toHaveLength(1)
     expect(parsedBody.system[0].text).toBe(
