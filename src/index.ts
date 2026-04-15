@@ -61,6 +61,11 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
                           )
                         }
 
+                        // Re-read auth to get the latest refresh token.
+                        // The outer `auth` snapshot may be stale if tokens
+                        // were rotated since the fetch() call was made.
+                        const freshAuth = await getAuth()
+
                         const response = await fetch(TOKEN_URL, {
                           method: 'POST',
                           headers: {
@@ -70,7 +75,7 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
                           },
                           body: JSON.stringify({
                             grant_type: 'refresh_token',
-                            refresh_token: auth.refresh,
+                            refresh_token: freshAuth.refresh,
                             client_id: CLIENT_ID,
                           }),
                         })
@@ -105,6 +110,21 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
                             expires: Date.now() + json.expires_in * 1000,
                           },
                         })
+
+                        // DEBUG: verify auth.set round-trip — remove once root cause confirmed
+                        const verifyAuth = await getAuth()
+                        console.error(
+                          '[auth-debug] auth.set wrote refresh:',
+                          json.refresh_token?.slice(-8),
+                        )
+                        console.error(
+                          '[auth-debug] getAuth() now returns refresh:',
+                          verifyAuth.refresh?.slice(-8),
+                        )
+                        console.error(
+                          '[auth-debug] round-trip OK:',
+                          verifyAuth.refresh === json.refresh_token,
+                        )
 
                         return json.access_token
                       } catch (error) {

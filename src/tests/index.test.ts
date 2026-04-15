@@ -520,6 +520,62 @@ describe('auth.loader', () => {
     expect(mockClient.auth.set).toHaveBeenCalledTimes(1)
   })
 
+  test('refresh always reads the latest refresh token, not a stale snapshot', async () => {
+    const tokenRequestBodies: string[] = []
+
+    globalThis.fetch = mock((input: any, init: any) => {
+      const url = extractUrl(input)
+
+      if (url.includes('/v1/oauth/token')) {
+        tokenRequestBodies.push(init?.body)
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              refresh_token: 'rotated-refresh',
+              access_token: 'fresh-access',
+              expires_in: 3600,
+            }),
+            { status: 200 },
+          ),
+        )
+      }
+
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    let callCount = 0
+    const mockClient = createMockClient()
+    const plugin = await getPlugin(mockClient)
+
+    const result = await plugin.auth.loader(
+      () => {
+        callCount++
+        if (callCount === 1) {
+          return Promise.resolve({
+            type: 'oauth',
+            access: 'expired-access',
+            refresh: 'stale-refresh',
+            expires: Date.now() - 1000,
+          })
+        }
+        return Promise.resolve({
+          type: 'oauth',
+          access: 'expired-access',
+          refresh: 'rotated-refresh-from-storage',
+          expires: Date.now() - 1000,
+        })
+      },
+      { models: {} },
+    )
+
+    await result.fetch(MESSAGES_URL, EMPTY_POST)
+
+    expect(tokenRequestBodies).toHaveLength(1)
+    const sentBody = JSON.parse(tokenRequestBodies[0])
+    expect(sentBody.refresh_token).toBe('rotated-refresh-from-storage')
+    expect(sentBody.refresh_token).not.toBe('stale-refresh')
+  })
+
   test('fetch wrapper adds beta=true to /v1/messages URL', async () => {
     let capturedUrl: string | undefined
 
