@@ -7,6 +7,9 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "engines": {
+    "bun": "1.3.12"
+  },
   "files": [
     "dist"
   ],
@@ -24,13 +27,16 @@
     "change": "changeset",
     "release": "bun run build && bun change publish"
   },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  },
   "devDependencies": {
     "@biomejs/biome": "2.4.11",
     "@changesets/changelog-github": "^0.6.0",
     "@changesets/cli": "^2.30.0",
     "@opencode-ai/plugin": "1.4.3",
     "@tsconfig/bun": "1.0.10",
-    "@types/bun": "1.3.11",
+    "@types/bun": "1.3.12",
     "dedent": "^1.7.2",
     "lefthook": "2.1.5",
     "typescript": "6.0.2"
