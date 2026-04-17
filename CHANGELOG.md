@@ -1,5 +1,11 @@
 # @ex-machina/opencode-anthropic-auth
 
+## 1.7.3
+
+### Patch Changes
+
+- [#110](https://github.com/ex-machina-co/opencode-anthropic-auth/pull/110) [`2352c87`](https://github.com/ex-machina-co/opencode-anthropic-auth/commit/2352c875bdbbb740b9faecd0345c2af88b993e58) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Downgrade bun to 1.3.11 to work around a macOS code-signing issue in 1.3.12 that prevents dev-mode testing.
+
 ## 1.7.2
 
 ### Patch Changes
