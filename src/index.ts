@@ -10,8 +10,64 @@ import {
   setOAuthHeaders,
 } from './transform.ts'
 
+/**
+ * Models not yet present in OpenCode's bundled models.dev snapshot that
+ * this plugin injects so they appear in the model selection UI.
+ *
+ * Pricing: USD per million tokens (same scale as models.dev).
+ * Capabilities mirror claude-opus-4-6 (same family/generation).
+ */
+const INJECTED_MODELS = [
+  {
+    id: 'claude-opus-4-7',
+    providerID: 'anthropic',
+    api: {
+      id: 'anthropic',
+      url: 'https://api.anthropic.com/v1',
+      npm: '@ai-sdk/anthropic',
+    },
+    name: 'Claude Opus 4.7',
+    family: 'claude-opus',
+    capabilities: {
+      temperature: true,
+      reasoning: true,
+      attachment: true,
+      toolcall: true,
+      input: { text: true, audio: false, image: true, video: false, pdf: true },
+      output: {
+        text: true,
+        audio: false,
+        image: false,
+        video: false,
+        pdf: false,
+      },
+      interleaved: { field: 'reasoning_content' as const },
+    },
+    cost: { input: 5, output: 25, cache: { read: 0.5, write: 6.25 } },
+    limit: { context: 1_000_000, output: 128_000 },
+    status: 'active' as const,
+    options: {},
+    headers: {},
+    release_date: '2026-04-16',
+  },
+]
+
 export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
   return {
+    provider: {
+      id: 'anthropic',
+      async models(provider: { models: Record<string, unknown> }) {
+        const models: Record<string, unknown> = { ...provider.models }
+        for (const model of INJECTED_MODELS) {
+          // Don't overwrite if OpenCode already knows the model natively
+          if (!(model.id in models)) {
+            models[model.id] = model
+          }
+        }
+        return models
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: ProviderHook not yet in typed Hooks interface
+    } as any,
     auth: {
       provider: 'anthropic',
       async loader(

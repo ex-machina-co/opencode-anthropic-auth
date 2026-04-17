@@ -70,6 +70,13 @@ describe('AnthropicAuthPlugin', () => {
     expect(plugin.auth.loader).toBeFunction()
     expect(plugin.auth.methods).toBeArray()
   })
+
+  test('returns a provider hook targeting anthropic', async () => {
+    const plugin = await getPlugin()
+    expect(plugin.provider).toBeDefined()
+    expect(plugin.provider.id).toBe('anthropic')
+    expect(plugin.provider.models).toBeFunction()
+  })
 })
 
 describe('auth.methods', () => {
@@ -546,5 +553,75 @@ describe('auth.loader', () => {
     })
 
     expect(capturedUrl).toContain('beta=true')
+  })
+})
+
+describe('provider hook', () => {
+  test('injects claude-opus-4-7 when not already present', async () => {
+    const plugin = await getPlugin()
+    const result = await plugin.provider.models({ models: {} })
+    expect(result['claude-opus-4-7']).toBeDefined()
+    expect(result['claude-opus-4-7'].id).toBe('claude-opus-4-7')
+    expect(result['claude-opus-4-7'].name).toBe('Claude Opus 4.7')
+    expect(result['claude-opus-4-7'].providerID).toBe('anthropic')
+  })
+
+  test('injected claude-opus-4-7 has correct capabilities', async () => {
+    const plugin = await getPlugin()
+    const result = await plugin.provider.models({ models: {} })
+    const model = result['claude-opus-4-7']
+    expect(model.capabilities.toolcall).toBe(true)
+    expect(model.capabilities.attachment).toBe(true)
+    expect(model.capabilities.reasoning).toBe(true)
+    expect(model.capabilities.input.image).toBe(true)
+    expect(model.capabilities.input.pdf).toBe(true)
+  })
+
+  test('injected claude-opus-4-7 has correct pricing', async () => {
+    const plugin = await getPlugin()
+    const result = await plugin.provider.models({ models: {} })
+    const model = result['claude-opus-4-7']
+    expect(model.cost.input).toBe(5)
+    expect(model.cost.output).toBe(25)
+    expect(model.cost.cache.read).toBe(0.5)
+    expect(model.cost.cache.write).toBe(6.25)
+  })
+
+  test('injected claude-opus-4-7 has correct context limits', async () => {
+    const plugin = await getPlugin()
+    const result = await plugin.provider.models({ models: {} })
+    const model = result['claude-opus-4-7']
+    expect(model.limit.context).toBe(1_000_000)
+    expect(model.limit.output).toBe(128_000)
+  })
+
+  test('preserves existing provider models', async () => {
+    const plugin = await getPlugin()
+    const existingModels = {
+      'claude-opus-4-6': { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+      'claude-sonnet-4-6': {
+        id: 'claude-sonnet-4-6',
+        name: 'Claude Sonnet 4.6',
+      },
+    }
+    const result = await plugin.provider.models({ models: existingModels })
+    expect(result['claude-opus-4-6']).toBeDefined()
+    expect(result['claude-sonnet-4-6']).toBeDefined()
+    expect(result['claude-opus-4-7']).toBeDefined()
+  })
+
+  test('does not overwrite claude-opus-4-7 if already present in provider', async () => {
+    const plugin = await getPlugin()
+    const existing47 = {
+      id: 'claude-opus-4-7',
+      name: 'Existing Opus 4.7',
+      custom: true,
+    }
+    const result = await plugin.provider.models({
+      models: { 'claude-opus-4-7': existing47 },
+    })
+    // Should keep the existing entry, not overwrite it
+    expect((result['claude-opus-4-7'] as any).custom).toBe(true)
+    expect(result['claude-opus-4-7'].name).toBe('Existing Opus 4.7')
   })
 })
