@@ -1,6 +1,6 @@
 {
   "name": "@ex-machina/opencode-anthropic-auth",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "repository": {
     "type": "git",
     "url": "https://github.com/ex-machina-co/opencode-anthropic-auth"

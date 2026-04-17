@@ -1,5 +1,11 @@
 # @ex-machina/opencode-anthropic-auth
 
+## 1.7.4
+
+### Patch Changes
+
+- [#96](https://github.com/ex-machina-co/opencode-anthropic-auth/pull/96) [`d3d4823`](https://github.com/ex-machina-co/opencode-anthropic-auth/commit/d3d4823c93e88cd0db125865bedf6d3049bf1134) Thanks [@eliasstepanik](https://github.com/eliasstepanik)! - Re-read auth before token refresh to avoid using a stale refresh token snapshot when token rotation occurs between requests.
+
 ## 1.7.3
 
 ### Patch Changes
