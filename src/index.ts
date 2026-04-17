@@ -111,21 +111,6 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
                           },
                         })
 
-                        // DEBUG: verify auth.set round-trip — remove once root cause confirmed
-                        const verifyAuth = await getAuth()
-                        console.error(
-                          '[auth-debug] auth.set wrote refresh:',
-                          json.refresh_token?.slice(-8),
-                        )
-                        console.error(
-                          '[auth-debug] getAuth() now returns refresh:',
-                          verifyAuth.refresh?.slice(-8),
-                        )
-                        console.error(
-                          '[auth-debug] round-trip OK:',
-                          verifyAuth.refresh === json.refresh_token,
-                        )
-
                         return json.access_token
                       } catch (error) {
                         const isNetworkError =
