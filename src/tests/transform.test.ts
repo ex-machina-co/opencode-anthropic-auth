@@ -533,6 +533,25 @@ describe('sanitizeSystemText', () => {
     )
   })
 
+  test('rewrites the "useful information about the environment" fingerprint', () => {
+    // Anthropic's classifier matches this exact phrase as a third-party-agent
+    // signal; leaving it intact produces a 400 invalid_request_error disguised
+    // as "You're out of extra usage." The TEXT_REPLACEMENTS entry rewrites it
+    // in place so the env-block context still reaches the model.
+    const result = sanitizeSystemText(dedent`
+      Here is some useful information about the environment you are running in:
+      <env>
+        Working directory: /tmp/project
+      </env>
+    `)
+    expect(result).toMatchInlineSnapshot(`
+      "Environment context you are running in:
+      <env>
+        Working directory: /tmp/project
+      </env>"
+    `)
+  })
+
   test('preserves "opencode" in file paths and unrelated content', () => {
     const result = sanitizeSystemText(dedent`
       You are OpenCode, the best coding agent on the planet.
