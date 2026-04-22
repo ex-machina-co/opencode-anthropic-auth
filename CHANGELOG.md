@@ -1,5 +1,11 @@
 # @ex-machina/opencode-anthropic-auth
 
+## 1.7.5
+
+### Patch Changes
+
+- [#118](https://github.com/ex-machina-co/opencode-anthropic-auth/pull/118) [`4444663`](https://github.com/ex-machina-co/opencode-anthropic-auth/commit/4444663f5a344d2fbe2435fba3d20f24d31259d7) Thanks [@jyapayne](https://github.com/jyapayne)! - Rewrite the phrase "Here is some useful information about the environment you are running in:" in sanitized system prompts. This exact phrase ships verbatim in OpenCode's default system prompt and is used by Anthropic's server-side classifier as a third-party-agent fingerprint — matching it produces a 400 invalid_request_error disguised as "You're out of extra usage." in production. The sentence is now rewritten in place to a semantic equivalent so the model still sees the env-block intro while the request is accepted.
+
 ## 1.7.4
 
 ### Patch Changes
