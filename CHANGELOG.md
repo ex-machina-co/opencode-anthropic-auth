@@ -1,5 +1,11 @@
 # @ex-machina/opencode-anthropic-auth
 
+## 1.8.0
+
+### Minor Changes
+
+- [#125](https://github.com/ex-machina-co/opencode-anthropic-auth/pull/125) [`e057b1b`](https://github.com/ex-machina-co/opencode-anthropic-auth/commit/e057b1ba179ed214ab406df68b37848d7260b11b) Thanks [@dependabot](https://github.com/apps/dependabot)! - Upgraded the bun runtime from `1.3.11` to `1.3.13`
+
 ## 1.7.5
 
 ### Patch Changes
