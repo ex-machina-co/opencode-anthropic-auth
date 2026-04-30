@@ -34,7 +34,7 @@
     "@biomejs/biome": "2.4.13",
     "@changesets/changelog-github": "^0.6.0",
     "@changesets/cli": "^2.31.0",
-    "@opencode-ai/plugin": "1.14.28",
+    "@opencode-ai/plugin": "1.14.30",
     "@tsconfig/bun": "1.0.10",
     "@types/bun": "1.3.13",
     "dedent": "^1.7.2",
