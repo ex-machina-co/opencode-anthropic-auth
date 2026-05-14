@@ -8,7 +8,7 @@
         "@biomejs/biome": "2.4.14",
         "@changesets/changelog-github": "^0.7.0",
         "@changesets/cli": "^2.31.0",
-        "@opencode-ai/plugin": "1.14.41",
+        "@opencode-ai/plugin": "1.14.50",
         "@tsconfig/bun": "1.0.10",
         "@types/bun": "1.3.13",
         "dedent": "^1.7.2",
@@ -103,9 +103,9 @@
 
     "@nodelib/fs.walk": ["@nodelib/fs.walk@1.2.8", "", { "dependencies": { "@nodelib/fs.scandir": "2.1.5", "fastq": "^1.6.0" } }, "sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg=="],
 
-    "@opencode-ai/plugin": ["@opencode-ai/plugin@1.14.41", "", { "dependencies": { "@opencode-ai/sdk": "1.14.41", "effect": "4.0.0-beta.59", "zod": "4.1.8" }, "peerDependencies": { "@opentui/core": ">=0.2.2", "@opentui/solid": ">=0.2.2" }, "optionalPeers": ["@opentui/core", "@opentui/solid"] }, "sha512-Q/QdDKSfHyYX+Xqd79o4XgyZKqF8h5qgqgfmOQbKVLhbduc9zMYdpV2yvWT6gaJPrpOftpka/kpr56PCqzetYQ=="],
+    "@opencode-ai/plugin": ["@opencode-ai/plugin@1.14.50", "", { "dependencies": { "@opencode-ai/sdk": "1.14.50", "effect": "4.0.0-beta.65", "zod": "4.1.8" }, "peerDependencies": { "@opentui/core": ">=0.2.9", "@opentui/keymap": ">=0.2.9", "@opentui/solid": ">=0.2.9" }, "optionalPeers": ["@opentui/core", "@opentui/keymap", "@opentui/solid"] }, "sha512-2D4k6r8IFaAajEmezOZ3UKmRRGqEw2YzqotH5zLGT434yKtabduEsQgXa0fWlASut4FVT3JURhq5LqeBUV/k4g=="],
 
-    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.14.41", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-RYb2dCUv0TWIvBNnnO6ANbAPYri6rKuWizSoVFw/Pw+SCDj9ASHM5gAZ+jkskp8gYMfLLHe/Fpkun/9mr8m0IQ=="],
+    "@opencode-ai/sdk": ["@opencode-ai/sdk@1.14.50", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-IrTKTFviR4Tj+u0BI8h8XgXIvEpxwkkHqBj6E0aEc4DBErpS3qh2Lkp1xt0OdtCYiLE3wZ1bAIiHOiO66H/7TA=="],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
@@ -145,7 +145,7 @@
 
     "dotenv": ["dotenv@8.6.0", "", {}, "sha512-IrPdXQsk2BbzvCBGBOTmmSH5SodmqZNt4ERAZDmW4CT+tL8VtvinqywuANaFu4bOMWki16nqf0e4oC0QIaDr/g=="],
 
-    "effect": ["effect@4.0.0-beta.59", "", { "dependencies": { "@standard-schema/spec": "^1.1.0", "fast-check": "^4.6.0", "find-my-way-ts": "^0.1.6", "ini": "^6.0.0", "kubernetes-types": "^1.30.0", "msgpackr": "^1.11.9", "multipasta": "^0.2.7", "toml": "^4.1.1", "uuid": "^13.0.0", "yaml": "^2.8.3" } }, "sha512-xyUDLeHSe8d6lWGOvR6Fgn2HL6gYeTZ/S4Jzk9uc4ZUxMPPsNZlNXrvk0C7/utQFzeX7uAWcVnG2BjbA0SRoAA=="],
+    "effect": ["effect@4.0.0-beta.65", "", { "dependencies": { "@standard-schema/spec": "^1.1.0", "fast-check": "^4.6.0", "find-my-way-ts": "^0.1.6", "ini": "^6.0.0", "kubernetes-types": "^1.30.0", "msgpackr": "^1.11.9", "multipasta": "^0.2.7", "toml": "^4.1.1", "uuid": "^13.0.0", "yaml": "^2.8.3" } }, "sha512-QYKvQPAj3CmtsvWkHQww15wX4KG2gNsszDWEcOO5sZCMknp66u6Si/Opmt3wwWCwsyvRmDAdIg+JIz5qzbbFIw=="],
 
     "enquirer": ["enquirer@2.4.1", "", { "dependencies": { "ansi-colors": "^4.1.1", "strip-ansi": "^6.0.1" } }, "sha512-rRqJg/6gd538VHvR3PSrdRBb/1Vy2YfzHqzvbhGIQpDRKIa4FgV/54b5Q1xYSxOOwKvjXweS26E0Q+nAMwp2pQ=="],
 
