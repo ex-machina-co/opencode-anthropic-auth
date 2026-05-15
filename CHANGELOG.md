@@ -1,5 +1,15 @@
 # @ex-machina/opencode-anthropic-auth
 
+## 1.8.1
+
+### Patch Changes
+
+- [#143](https://github.com/ex-machina-co/opencode-anthropic-auth/pull/143) [`994bdf6`](https://github.com/ex-machina-co/opencode-anthropic-auth/commit/994bdf61092c5686d96f34c05b9e6a91b28e4a86) Thanks [@dependabot](https://github.com/apps/dependabot)! - chore(deps-dev): bump @opencode-ai/plugin from 1.14.41 to 1.14.50
+
+- [#142](https://github.com/ex-machina-co/opencode-anthropic-auth/pull/142) [`90f6326`](https://github.com/ex-machina-co/opencode-anthropic-auth/commit/90f63264358b3e69effb3f11a36e430d05b74b10) Thanks [@dependabot](https://github.com/apps/dependabot)! - chore(deps-dev): bump @biomejs/biome from 2.4.14 to 2.4.15
+
+- [#145](https://github.com/ex-machina-co/opencode-anthropic-auth/pull/145) [`a58d6f1`](https://github.com/ex-machina-co/opencode-anthropic-auth/commit/a58d6f1d9ff23d69ca6a022852a325b31d015fee) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Bump bun to 1.3.14
+
 ## 1.8.0
 
 ### Minor Changes
