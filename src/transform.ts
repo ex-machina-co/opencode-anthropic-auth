@@ -1,6 +1,4 @@
-import { buildBillingHeaderValue } from './cch.ts'
 import {
-  CLAUDE_CODE_ENTRYPOINT,
   CLAUDE_CODE_IDENTITY,
   OPENCODE_IDENTITY_PREFIX,
   PARAGRAPH_REMOVAL_ANCHORS,
@@ -277,6 +275,68 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === 'object' && !Array.isArray(value)
 }
 
+const CACHE_1H = { type: 'ephemeral', ttl: '1h' } as const
+
+function removeCacheControl(value: unknown): void {
+  if (!isRecord(value)) return
+  delete value.cache_control
+  delete value.cacheControl
+}
+
+function removeAllCacheControls(parsed: Record<string, unknown>): void {
+  if (Array.isArray(parsed.system)) {
+    for (const block of parsed.system) removeCacheControl(block)
+  }
+  if (!Array.isArray(parsed.messages)) return
+  for (const msg of parsed.messages) {
+    removeCacheControl(msg)
+    if (isRecord(msg) && Array.isArray(msg.content)) {
+      for (const block of msg.content) removeCacheControl(block)
+    }
+  }
+}
+
+function setWireCacheControl(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  delete value.cacheControl
+  value.cache_control = { ...CACHE_1H }
+  return true
+}
+
+function setMessageCacheAnchor(message: unknown): boolean {
+  if (!isRecord(message)) return false
+  const content = Array.isArray(message.content)
+    ? message.content
+    : typeof message.content === 'string'
+      ? [{ type: 'text', text: message.content }]
+      : null
+  if (!content?.length) return setWireCacheControl(message)
+  message.content = content
+  const target = [...content]
+    .reverse()
+    .find((b) => isRecord(b) && b.type !== 'thinking')
+  return setWireCacheControl(target ?? message)
+}
+
+function applyHybridCache1h(parsed: Record<string, unknown>): void {
+  removeAllCacheControls(parsed)
+
+  // Cache last system block after the identity block
+  if (Array.isArray(parsed.system)) {
+    const identityIdx = parsed.system.findIndex(
+      (b) => isRecord(b) && b.text === CLAUDE_CODE_IDENTITY,
+    )
+    const cacheableSystem = parsed.system
+      .slice(identityIdx >= 0 ? identityIdx + 1 : 0)
+      .filter(isRecord)
+    setWireCacheControl(cacheableSystem[cacheableSystem.length - 1])
+  }
+
+  if (!Array.isArray(parsed.messages)) return
+  setMessageCacheAnchor(parsed.messages[0])
+  setMessageCacheAnchor(parsed.messages[1])
+}
+
 /**
  * Sanitize system prompt and prepend Claude Code identity.
  * Handles all Anthropic API system formats: undefined, string, or array of text blocks.
@@ -332,32 +392,14 @@ export function prependClaudeCodeIdentity(system: unknown): SystemBlock[] {
 }
 
 /**
- * Rewrite the full request body: sanitize system prompt and prefix tool names.
+ * Rewrite the full request body: sanitize system prompt, prefix tool names,
+ * and apply hybrid 1h prompt caching.
  */
 export function rewriteRequestBody(body: string): string {
   try {
     const parsed = JSON.parse(body)
-    const billingHeader =
-      Array.isArray(parsed.messages) &&
-      parsed.messages.some(
-        (message: { role?: string }) => message.role === 'user',
-      )
-        ? buildBillingHeaderValue(
-            parsed.messages,
-            undefined,
-            CLAUDE_CODE_ENTRYPOINT,
-          )
-        : null
-
-    // Sanitize system prompt and prepend Claude Code identity
     parsed.system = prependClaudeCodeIdentity(parsed.system)
-
-    // Prepend the billing header as a separate system block so the
-    // final layout is: [billing header, identity, ...rest]
-    if (billingHeader && Array.isArray(parsed.system)) {
-      parsed.system.unshift({ type: 'text', text: billingHeader })
-    }
-
+    applyHybridCache1h(parsed)
     return prefixToolNames(parsed)
   } catch {
     return body
