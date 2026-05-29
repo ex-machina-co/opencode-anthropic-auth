@@ -10,8 +10,70 @@ import {
   setOAuthHeaders,
 } from './transform.ts'
 
+type AnthropicModel = {
+  id: string
+  name: string
+  family?: string
+  release_date: string
+  api: { id: string; [key: string]: unknown }
+  cost: {
+    input: number
+    output: number
+    cache: { read: number; write: number }
+    [key: string]: unknown
+  }
+  limit: { context: number; input?: number; output: number }
+  [key: string]: unknown
+}
+
+type AnthropicProvider = {
+  models: Record<string, AnthropicModel>
+}
+
+const CLAUDE_OPUS_4_8_ID = 'claude-opus-4-8'
+const CLAUDE_OPUS_4_8_BASE_MODELS = [
+  'claude-opus-4-7',
+  'claude-opus-4-6',
+] as const
+
+function addClaudeOpus48Model(provider: AnthropicProvider) {
+  if (provider.models[CLAUDE_OPUS_4_8_ID]) return provider.models
+
+  const base = CLAUDE_OPUS_4_8_BASE_MODELS.map(
+    (id) => provider.models[id],
+  ).find(Boolean)
+  if (!base) return provider.models
+
+  return {
+    [CLAUDE_OPUS_4_8_ID]: {
+      ...base,
+      id: CLAUDE_OPUS_4_8_ID,
+      name: 'Claude Opus 4.8',
+      release_date: '2026-05-29',
+      api: { ...base.api, id: CLAUDE_OPUS_4_8_ID },
+      cost: {
+        input: 5,
+        output: 25,
+        cache: { read: 0.5, write: 6.25 },
+      },
+      limit: {
+        context: 1_000_000,
+        output: 128_000,
+      },
+      status: 'active',
+    },
+    ...provider.models,
+  }
+}
+
 export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
   return {
+    provider: {
+      id: 'anthropic',
+      models: async (provider: AnthropicProvider) => {
+        return addClaudeOpus48Model(provider)
+      },
+    },
     auth: {
       provider: 'anthropic',
       async loader(

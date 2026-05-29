@@ -103,6 +103,76 @@ describe('auth.methods', () => {
   })
 })
 
+describe('provider.models', () => {
+  test('adds Claude Opus 4.8 from latest Opus metadata', async () => {
+    const plugin = await getPlugin()
+    const models = {
+      'claude-opus-4-7': {
+        id: 'claude-opus-4-7',
+        providerID: 'anthropic',
+        name: 'Claude Opus 4.7',
+        family: 'claude-opus',
+        release_date: '2026-05-01',
+        api: {
+          id: 'claude-opus-4-7',
+          url: 'https://api.anthropic.com/v1/messages',
+          npm: '@ai-sdk/anthropic',
+        },
+        capabilities: {
+          reasoning: true,
+          attachment: true,
+          toolcall: true,
+        },
+        cost: {
+          input: 5,
+          output: 25,
+          cache: { read: 0.5, write: 6.25 },
+        },
+        limit: {
+          context: 1_000_000,
+          output: 128_000,
+        },
+        status: 'active',
+        options: {},
+        headers: {},
+      },
+    }
+
+    const result = await plugin.provider.models({ models }, {})
+
+    expect(result['claude-opus-4-8']).toMatchObject({
+      id: 'claude-opus-4-8',
+      name: 'Claude Opus 4.8',
+      release_date: '2026-05-29',
+      api: { id: 'claude-opus-4-8' },
+      cost: {
+        input: 5,
+        output: 25,
+        cache: { read: 0.5, write: 6.25 },
+      },
+      limit: {
+        context: 1_000_000,
+        output: 128_000,
+      },
+      status: 'active',
+    })
+  })
+
+  test('does not overwrite native Claude Opus 4.8 metadata', async () => {
+    const plugin = await getPlugin()
+    const models = {
+      'claude-opus-4-8': {
+        id: 'claude-opus-4-8',
+        name: 'Claude Opus 4.8 Native',
+      },
+    }
+
+    const result = await plugin.provider.models({ models }, {})
+
+    expect(result['claude-opus-4-8']).toBe(models['claude-opus-4-8'])
+  })
+})
+
 describe('auth.loader', () => {
   const originalFetch = globalThis.fetch
   const originalSetTimeout = globalThis.setTimeout
