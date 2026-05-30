@@ -1,9 +1,9 @@
 {
-  "name": "@ex-machina/opencode-anthropic-auth",
-  "version": "1.8.1",
+  "name": "@sahiljassal/opencode-anthropic-auth",
+  "version": "2.0.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ex-machina-co/opencode-anthropic-auth"
+    "url": "git+https://github.com/shljsl75891/opencode-anthropic-auth.git"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
