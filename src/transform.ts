@@ -1,5 +1,6 @@
 import { buildBillingHeaderValue } from './cch.ts'
 import {
+  ADAPTIVE_THINKING_ONLY_MODEL_PREFIXES,
   CLAUDE_CODE_ENTRYPOINT,
   CLAUDE_CODE_IDENTITY,
   OPENCODE_IDENTITY_PREFIX,
@@ -332,6 +333,41 @@ export function prependClaudeCodeIdentity(system: unknown): SystemBlock[] {
 }
 
 /**
+ * Whether a model only supports adaptive thinking (and therefore rejects
+ * `thinking: { type: "disabled" }`). Matches Claude Fable 5 / Mythos 5 by
+ * model-ID prefix. Tolerates an optional `provider/` prefix on the id.
+ */
+export function isAdaptiveThinkingOnlyModel(model: unknown): boolean {
+  if (typeof model !== 'string') return false
+  const id = model.includes('/')
+    ? model.slice(model.lastIndexOf('/') + 1)
+    : model
+  return ADAPTIVE_THINKING_ONLY_MODEL_PREFIXES.some((prefix) =>
+    id.startsWith(prefix),
+  )
+}
+
+/**
+ * Claude Fable 5 / Mythos 5 reject `thinking: { type: "disabled" }` with a
+ * 400 invalid_request_error. OpenCode (or a user's "no-thinking" variant) can
+ * send exactly that. When the target model is adaptive-thinking-only, drop the
+ * unsupported disabled `thinking` block so the request succeeds with the
+ * model's default adaptive thinking instead of failing outright.
+ *
+ * Mutates `parsed` in place. No-op for any other model, for enabled thinking,
+ * or when thinking is unset.
+ */
+export function normalizeAdaptiveThinking(
+  parsed: Record<string, unknown>,
+): void {
+  if (!isAdaptiveThinkingOnlyModel(parsed.model)) return
+  const thinking = parsed.thinking
+  if (isRecord(thinking) && thinking.type === 'disabled') {
+    delete parsed.thinking
+  }
+}
+
+/**
  * Rewrite the full request body: sanitize system prompt and prefix tool names.
  */
 export function rewriteRequestBody(body: string): string {
@@ -357,6 +393,10 @@ export function rewriteRequestBody(body: string): string {
     if (billingHeader && Array.isArray(parsed.system)) {
       parsed.system.unshift({ type: 'text', text: billingHeader })
     }
+
+    // Drop unsupported `thinking: { type: "disabled" }` for adaptive-thinking-
+    // only models (Claude Fable 5 / Mythos 5) so they don't 400.
+    normalizeAdaptiveThinking(parsed)
 
     return prefixToolNames(parsed)
   } catch {

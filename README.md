@@ -73,6 +73,12 @@ The Anthropic API for Max subscriptions has specific requirements for the system
 
 Everything else in the system prompt is preserved: tone/style guidance, task management instructions, tool usage policy, environment info, skills, user/project instructions, and file paths containing "opencode". The sanitized system prompt is structured as three blocks in `system[]`: the billing header, the Claude Code identity line, and the remaining system content.
 
+### Adaptive-thinking models (Claude Fable 5 / Mythos 5)
+
+Claude Fable 5 (`claude-fable-5`) and Claude Mythos 5 (`claude-mythos-5`) use **adaptive thinking** exclusively — thinking is always on and `thinking: { type: "disabled" }` is rejected by the Messages API with a `400 invalid_request_error`. OpenCode (or a user-defined "no-thinking" model variant) can send exactly that disabled block, which would break every request to these models.
+
+To keep these models usable, the plugin drops an unsupported `thinking: { type: "disabled" }` block when the target model is adaptive-thinking-only (matched by the `claude-fable-` / `claude-mythos-` model-ID prefixes). The request then succeeds with the model's default adaptive thinking. Requests that send `thinking: { type: "enabled", budget_tokens }`, or that don't set `thinking` at all, are passed through unchanged. Non-adaptive models (Opus, Sonnet, Haiku) are never touched, since they support disabled thinking.
+
 ## Development
 
 ### Local Testing

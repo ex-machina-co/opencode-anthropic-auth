@@ -26,6 +26,32 @@ export const REQUIRED_BETAS = [
   'interleaved-thinking-2025-05-14',
 ]
 
+/**
+ * Model-ID prefixes for Claude models that ONLY support adaptive thinking.
+ *
+ * Claude Fable 5 (`claude-fable-5`) and Claude Mythos 5 (`claude-mythos-5`,
+ * `claude-mythos-preview`) use adaptive thinking exclusively: thinking is
+ * always on, and `thinking: { type: "disabled" }` is rejected by the Messages
+ * API with a 400 `invalid_request_error`:
+ *
+ *   "thinking.type.disabled" is not supported for this model. Thinking
+ *   defaults to adaptive mode when not specified; use "thinking.type.enabled"
+ *   with "budget_tokens" for extended thinking.
+ *
+ * OpenCode (or a user's "no-thinking" model variant) can send exactly that
+ * disabled block, which would otherwise break every request to these models.
+ * See `normalizeAdaptiveThinking` in transform.ts.
+ *
+ * Matched by prefix so future point releases (e.g. `claude-fable-5-1`) and the
+ * whole Mythos line are covered automatically.
+ *
+ * Ref: https://docs.anthropic.com/en/docs/about-claude/models/introducing-claude-fable-5-and-claude-mythos-5
+ */
+export const ADAPTIVE_THINKING_ONLY_MODEL_PREFIXES = [
+  'claude-fable-',
+  'claude-mythos-',
+] as const
+
 export const OPENCODE_IDENTITY_PREFIX = 'You are OpenCode'
 export const CLAUDE_CODE_IDENTITY =
   "You are a Claude agent, built on Anthropic's Claude Agent SDK."

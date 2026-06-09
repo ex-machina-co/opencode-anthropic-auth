@@ -7,9 +7,11 @@ import {
 } from '../constants'
 import {
   createStrippedStream,
+  isAdaptiveThinkingOnlyModel,
   isInsecure,
   mergeBetaHeaders,
   mergeHeaders,
+  normalizeAdaptiveThinking,
   prefixToolNames,
   prependClaudeCodeIdentity,
   rewriteRequestBody,
@@ -823,6 +825,109 @@ describe('rewriteRequestBody', () => {
 
     // User message is untouched
     expect(result.messages[0].content).toBe('hi')
+  })
+
+  test('strips disabled thinking for claude-fable-5 (adaptive-only)', () => {
+    const body = JSON.stringify({
+      model: 'claude-fable-5',
+      thinking: { type: 'disabled' },
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+    const result = JSON.parse(rewriteRequestBody(body))
+    // The unsupported disabled thinking block is removed so the request
+    // succeeds with the model's default adaptive thinking.
+    expect(result.thinking).toBeUndefined()
+  })
+
+  test('strips disabled thinking for claude-mythos-5 (adaptive-only)', () => {
+    const body = JSON.stringify({
+      model: 'claude-mythos-5',
+      thinking: { type: 'disabled' },
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+    const result = JSON.parse(rewriteRequestBody(body))
+    expect(result.thinking).toBeUndefined()
+  })
+
+  test('preserves enabled thinking for claude-fable-5', () => {
+    const body = JSON.stringify({
+      model: 'claude-fable-5',
+      thinking: { type: 'enabled', budget_tokens: 1024 },
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+    const result = JSON.parse(rewriteRequestBody(body))
+    expect(result.thinking).toEqual({ type: 'enabled', budget_tokens: 1024 })
+  })
+
+  test('preserves disabled thinking for non-adaptive models (e.g. opus)', () => {
+    const body = JSON.stringify({
+      model: 'claude-opus-4-8',
+      thinking: { type: 'disabled' },
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+    const result = JSON.parse(rewriteRequestBody(body))
+    // Opus DOES support disabled thinking — must not be touched.
+    expect(result.thinking).toEqual({ type: 'disabled' })
+  })
+})
+
+describe('isAdaptiveThinkingOnlyModel', () => {
+  test('matches Fable 5 and Mythos models by prefix', () => {
+    expect(isAdaptiveThinkingOnlyModel('claude-fable-5')).toBe(true)
+    expect(isAdaptiveThinkingOnlyModel('claude-fable-5-1')).toBe(true)
+    expect(isAdaptiveThinkingOnlyModel('claude-mythos-5')).toBe(true)
+    expect(isAdaptiveThinkingOnlyModel('claude-mythos-preview')).toBe(true)
+  })
+
+  test('tolerates an optional provider/ prefix on the id', () => {
+    expect(isAdaptiveThinkingOnlyModel('anthropic/claude-fable-5')).toBe(true)
+  })
+
+  test('does not match non-adaptive models', () => {
+    expect(isAdaptiveThinkingOnlyModel('claude-opus-4-8')).toBe(false)
+    expect(isAdaptiveThinkingOnlyModel('claude-sonnet-4-6')).toBe(false)
+    expect(isAdaptiveThinkingOnlyModel('claude-haiku-4-5')).toBe(false)
+  })
+
+  test('handles non-string input safely', () => {
+    expect(isAdaptiveThinkingOnlyModel(undefined)).toBe(false)
+    expect(isAdaptiveThinkingOnlyModel(null)).toBe(false)
+    expect(isAdaptiveThinkingOnlyModel(42)).toBe(false)
+  })
+})
+
+describe('normalizeAdaptiveThinking', () => {
+  test('deletes disabled thinking for an adaptive-only model', () => {
+    const parsed: Record<string, unknown> = {
+      model: 'claude-fable-5',
+      thinking: { type: 'disabled' },
+    }
+    normalizeAdaptiveThinking(parsed)
+    expect('thinking' in parsed).toBe(false)
+  })
+
+  test('leaves enabled thinking untouched for an adaptive-only model', () => {
+    const parsed: Record<string, unknown> = {
+      model: 'claude-fable-5',
+      thinking: { type: 'enabled', budget_tokens: 2048 },
+    }
+    normalizeAdaptiveThinking(parsed)
+    expect(parsed.thinking).toEqual({ type: 'enabled', budget_tokens: 2048 })
+  })
+
+  test('leaves disabled thinking untouched for a non-adaptive model', () => {
+    const parsed: Record<string, unknown> = {
+      model: 'claude-opus-4-8',
+      thinking: { type: 'disabled' },
+    }
+    normalizeAdaptiveThinking(parsed)
+    expect(parsed.thinking).toEqual({ type: 'disabled' })
+  })
+
+  test('is a no-op when thinking is unset', () => {
+    const parsed: Record<string, unknown> = { model: 'claude-fable-5' }
+    normalizeAdaptiveThinking(parsed)
+    expect('thinking' in parsed).toBe(false)
   })
 })
 
