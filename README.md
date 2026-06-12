@@ -6,7 +6,7 @@
 > Use your best judgment and don't try to abuse the subscriptions. Plugins like oh-my-openagent are _known_ to trigger bans. Please be careful when using Ralph loops or insanely heavy usage patterns.
 
 > [!IMPORTANT]
-> If you are seeing issues, please try to `rm -rf ~/.cache/opencode` and check your `opencode.json` config to make sure you're on the latest version.
+> If you are seeing issues, please try to `rm -rf ~/.cache/opencode/packages/@ex-machina` and check your `opencode.json` config to make sure you're on the latest version.
 >
 > Try this FIRST before making an Issue. Thanks!
 
