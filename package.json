@@ -31,7 +31,7 @@
     "@opencode-ai/plugin": "*"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.16",
+    "@biomejs/biome": "2.5.0",
     "@changesets/changelog-github": "^0.7.0",
     "@changesets/cli": "^2.31.0",
     "@opencode-ai/plugin": "1.17.3",
