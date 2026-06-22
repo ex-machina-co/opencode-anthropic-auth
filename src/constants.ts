@@ -10,14 +10,20 @@ export const CODE_CALLBACK_URL =
 
 export const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token'
 
-export const OAUTH_SCOPES = [
-  'org:create_api_key',
+export const CLAUDE_CODE_OAUTH_SCOPES = [
   'user:profile',
   'user:inference',
   'user:sessions:claude_code',
   'user:mcp_servers',
   'user:file_upload',
 ]
+
+export const API_KEY_OAUTH_SCOPES = [
+  'org:create_api_key',
+  ...CLAUDE_CODE_OAUTH_SCOPES,
+]
+
+export const OAUTH_SCOPES = API_KEY_OAUTH_SCOPES
 
 export const TOOL_PREFIX = 'mcp_'
 

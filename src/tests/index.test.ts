@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { CLAUDE_CODE_OAUTH_SCOPES } from '../constants'
 import { AnthropicAuthPlugin } from '../index'
 
 /** Extract the URL string from a fetch input (string, URL, or Request). */
@@ -266,6 +267,7 @@ describe('auth.loader', () => {
     const tokenBody = JSON.parse(tokenCall!.body!)
     expect(tokenBody.grant_type).toBe('refresh_token')
     expect(tokenBody.refresh_token).toBe('old-refresh')
+    expect(tokenBody.scope).toBe(CLAUDE_CODE_OAUTH_SCOPES.join(' '))
 
     // Should have called client.auth.set with new tokens
     expect(mockClient.auth.set).toHaveBeenCalled()

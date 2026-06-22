@@ -1,6 +1,6 @@
 import type { Plugin } from '@opencode-ai/plugin'
 import { authorize, exchange } from './auth.ts'
-import { CLIENT_ID, TOKEN_URL } from './constants.ts'
+import { CLAUDE_CODE_OAUTH_SCOPES, CLIENT_ID, TOKEN_URL } from './constants.ts'
 import {
   createStrippedStream,
   isInsecure,
@@ -77,6 +77,7 @@ export const AnthropicAuthPlugin: Plugin = async ({ client }) => {
                             grant_type: 'refresh_token',
                             refresh_token: freshAuth.refresh,
                             client_id: CLIENT_ID,
+                            scope: CLAUDE_CODE_OAUTH_SCOPES.join(' '),
                           }),
                         })
 

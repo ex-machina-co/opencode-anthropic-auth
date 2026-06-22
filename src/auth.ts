@@ -1,8 +1,9 @@
 import {
+  API_KEY_OAUTH_SCOPES,
   AUTHORIZE_URLS,
+  CLAUDE_CODE_OAUTH_SCOPES,
   CLIENT_ID,
   CODE_CALLBACK_URL,
-  OAUTH_SCOPES,
   TOKEN_URL,
 } from './constants.ts'
 import { generatePKCE } from './pkce.ts'
@@ -105,7 +106,9 @@ export async function authorize(
   url.searchParams.set('client_id', CLIENT_ID)
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('redirect_uri', CODE_CALLBACK_URL)
-  url.searchParams.set('scope', OAUTH_SCOPES.join(' '))
+  const scopes =
+    mode === 'console' ? API_KEY_OAUTH_SCOPES : CLAUDE_CODE_OAUTH_SCOPES
+  url.searchParams.set('scope', scopes.join(' '))
   url.searchParams.set('code_challenge', pkce.challenge)
   url.searchParams.set('code_challenge_method', 'S256')
   url.searchParams.set('state', state)

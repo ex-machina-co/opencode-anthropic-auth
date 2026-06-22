@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { authorize, exchange } from '../auth'
-import { CLIENT_ID, CODE_CALLBACK_URL, OAUTH_SCOPES } from '../constants'
+import {
+  API_KEY_OAUTH_SCOPES,
+  CLAUDE_CODE_OAUTH_SCOPES,
+  CLIENT_ID,
+  CODE_CALLBACK_URL,
+} from '../constants'
 
 afterEach(() => {
   mock.restore()
@@ -37,9 +42,23 @@ describe('authorize', () => {
     expect(url.searchParams.get('client_id')).toBe(CLIENT_ID)
     expect(url.searchParams.get('response_type')).toBe('code')
     expect(url.searchParams.get('redirect_uri')).toBe(CODE_CALLBACK_URL)
-    expect(url.searchParams.get('scope')).toBe(OAUTH_SCOPES.join(' '))
+    expect(url.searchParams.get('scope')).toBe(
+      CLAUDE_CODE_OAUTH_SCOPES.join(' '),
+    )
     expect(url.searchParams.get('code_challenge_method')).toBe('S256')
     expect(url.searchParams.get('state')).toBe(result.state)
+  })
+
+  test('sets API key creation scope only for console mode', async () => {
+    const max = await authorize('max')
+    const console = await authorize('console')
+
+    expect(new URL(max.url).searchParams.get('scope')).toBe(
+      CLAUDE_CODE_OAUTH_SCOPES.join(' '),
+    )
+    expect(new URL(console.url).searchParams.get('scope')).toBe(
+      API_KEY_OAUTH_SCOPES.join(' '),
+    )
   })
 
   test('does not use localhost', async () => {
