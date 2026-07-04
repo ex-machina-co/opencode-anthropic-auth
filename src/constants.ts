@@ -22,8 +22,16 @@ export const OAUTH_SCOPES = [
 export const TOOL_PREFIX = 'mcp_'
 
 export const REQUIRED_BETAS = [
+  'claude-code-20250219',
   'oauth-2025-04-20',
   'interleaved-thinking-2025-05-14',
+  'thinking-token-count-2026-05-13',
+  'context-management-2025-06-27',
+  'prompt-caching-scope-2026-01-05',
+  'mid-conversation-system-2026-04-07',
+  'advisor-tool-2026-03-01',
+  'effort-2025-11-24',
+  'extended-cache-ttl-2025-04-11',
 ]
 
 export const OPENCODE_IDENTITY_PREFIX = 'You are OpenCode'
