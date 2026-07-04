@@ -12,8 +12,9 @@ import {
 
 /**
  * Prefix a tool name with TOOL_PREFIX and uppercase the first character.
- * Claude Code uses PascalCase tool names (e.g. mcp_Bash, mcp_Read);
- * lowercase names (mcp_bash, mcp_read) are flagged as non-Claude-Code clients.
+ * This intentionally differs from OpenCode's lowercase tool names, which were
+ * identified as a classifier signal. It is not a byte-for-byte copy of Claude
+ * Code's built-in or MCP tool naming scheme.
  */
 function prefixName(name: string): string {
   return `${TOOL_PREFIX}${name.charAt(0).toUpperCase()}${name.slice(1)}`
