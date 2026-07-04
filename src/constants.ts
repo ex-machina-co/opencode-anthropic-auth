@@ -40,10 +40,11 @@ export const CLAUDE_CODE_IDENTITY =
 
 export const CCH_SALT = '59cf53e54c78'
 export const CCH_POSITIONS = [4, 7, 20]
-export const CLAUDE_CODE_VERSION = '2.1.87'
-export const CLAUDE_CODE_ENTRYPOINT = 'sdk-cli'
+export const CLAUDE_CODE_VERSION = '2.1.185'
+export const CLAUDE_CODE_ENTRYPOINT = 'claude-desktop'
 
-export const USER_AGENT = 'claude-cli/2.1.87 (external, cli)'
+export const USER_AGENT =
+  'claude-cli/2.1.185 (external, claude-desktop, agent-sdk/0.3.197)'
 
 /**
  * Anchors that identify paragraphs to remove from the system prompt.

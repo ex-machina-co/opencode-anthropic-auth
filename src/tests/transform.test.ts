@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import dedent from 'dedent'
 import {
+  CLAUDE_CODE_ENTRYPOINT,
   CLAUDE_CODE_IDENTITY,
+  CLAUDE_CODE_VERSION,
   OPENCODE_IDENTITY_PREFIX,
   REQUIRED_BETAS,
+  USER_AGENT,
 } from '../constants'
 import {
   createStrippedStream,
@@ -124,6 +127,14 @@ describe('mergeBetaHeaders', () => {
 })
 
 describe('setOAuthHeaders', () => {
+  test('uses the Claude Code identity constants captured from v2.1.185', () => {
+    expect(CLAUDE_CODE_VERSION).toBe('2.1.185')
+    expect(CLAUDE_CODE_ENTRYPOINT).toBe('claude-desktop')
+    expect(USER_AGENT).toBe(
+      'claude-cli/2.1.185 (external, claude-desktop, agent-sdk/0.3.197)',
+    )
+  })
+
   test('sets authorization bearer token', () => {
     const headers = new Headers()
     setOAuthHeaders(headers, 'my-token')
@@ -133,7 +144,7 @@ describe('setOAuthHeaders', () => {
   test('sets user-agent', () => {
     const headers = new Headers()
     setOAuthHeaders(headers, 'token')
-    expect(headers.get('user-agent')).toContain('claude-cli')
+    expect(headers.get('user-agent')).toBe(USER_AGENT)
   })
 
   test('removes x-api-key', () => {
