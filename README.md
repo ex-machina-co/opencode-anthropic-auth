@@ -40,6 +40,7 @@ Add the plugin to your OpenCode configuration:
 The plugin provides three authentication options:
 
 - **Claude Pro/Max** - OAuth flow via `claude.ai` for Pro/Max subscribers. Uses your existing subscription at no additional API cost.
+    - run the `/connect` command, select `Anthropic (API key)` -> `Claude Pro/Max` and do OAuth
 - **Create an API Key** - OAuth flow via `console.anthropic.com` that creates an API key on your behalf.
 - **Manually enter API Key** - Standard API key entry for users who already have one.
 
