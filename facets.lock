@@ -1,0 +1,85 @@
+{
+  "lockfileVersion": 0.3,
+  "facets": {
+    "viper-plans": {
+      "source": {
+        "kind": "registry",
+        "registry": "https://api.agentfacets.io"
+      },
+      "version": "1.3.0",
+      "integrity": "sha256:be85be9bc09b87be4ffca314ec83cd317589a3da573ec73abc28e0cdda0e2ab2",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "viper-execution-rules",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/viper-execution-rules/SKILL.md",
+              "integrity": "sha256:6b70bed17556faf5e131b2771c6475db23e93d26a39197ef21e143509545514f"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "viper-planning",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/viper-planning/SKILL.md",
+              "integrity": "sha256:cf326cb73bad44540fadd11f4c985b3f8634f734db7c8f87f9e8230bf895284c"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "viper-continue",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/viper-continue.md",
+              "integrity": "sha256:80f8444039799ae1f06286994a2d420be97f1fe95c600f96b9cbc80516d29b79"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "viper-plan",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/viper-plan.md",
+              "integrity": "sha256:1faa52ff624a8fc997a4ce1a25857d9ce6d205c9e4d26015722dcd355272ed2d"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "viper-run",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/viper-run.md",
+              "integrity": "sha256:ab4e2036931dc344424b52d0019e96853cf8e235e755a452e942953504000eee"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

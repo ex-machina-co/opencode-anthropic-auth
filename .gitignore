@@ -1,9 +1,12 @@
 node_modules
 dist/
 
-# for now...
-.opencode/
+# Agent Facets managed
+.agents/
 .claude/
+.codex/
+.opencode/
+.mcp.json
 
 mise.local.toml
 
