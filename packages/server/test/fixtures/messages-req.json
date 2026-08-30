@@ -1,0 +1,89 @@
+{
+  "model": "claude-opus-5",
+  "system": [
+    {
+      "type": "text",
+      "text": "x-anthropic-billing-header: cc_version=2.1.236.2f1; cc_entrypoint=sdk-cli;"
+    },
+    {
+      "type": "text",
+      "text": "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+      "cache_control": {
+        "type": "ephemeral",
+        "ttl": "1h"
+      }
+    },
+    {
+      "type": "text",
+      "text": "<REDACTED_CLAUDE_CODE_SYSTEM_PROMPT>",
+      "cache_control": {
+        "type": "ephemeral",
+        "ttl": "1h"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "<system-reminder>\n<REDACTED_USER_AND_PROJECT_CONTEXT>\n</system-reminder>"
+        },
+        {
+          "type": "text",
+          "text": "Use the Read tool to read README.md and tell me its first heading exactly."
+        }
+      ]
+    },
+    {
+      "role": "system",
+      "content": [
+        {
+          "type": "text",
+          "text": "<REDACTED_DYNAMIC_SYSTEM_MESSAGE>"
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "Agent",
+      "description": "<REDACTED_TOOL_DESCRIPTION>",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": ["description", "prompt"]
+      }
+    },
+    {
+      "name": "Bash",
+      "description": "<REDACTED_TOOL_DESCRIPTION>",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "required": ["command"]
+      }
+    }
+  ],
+  "metadata": {
+    "user_id": "{\"device_id\":\"REDACTED\",\"account_uuid\":\"00000000-0000-0000-0000-000000000000\",\"session_id\":\"00000000-0000-0000-0000-000000000000\"}"
+  },
+  "max_tokens": 64000,
+  "thinking": {
+    "type": "adaptive",
+    "display": "omitted"
+  },
+  "context_management": {
+    "edits": [
+      {
+        "type": "clear_thinking_20251015",
+        "keep": "all"
+      }
+    ]
+  },
+  "output_config": {
+    "effort": "xhigh"
+  },
+  "stream": true
+}

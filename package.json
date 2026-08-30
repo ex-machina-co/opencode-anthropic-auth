@@ -13,9 +13,12 @@
   "files": [
     "dist"
   ],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "prepare": "tsc -p tsconfig.build.json",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && tsc -p packages/server/tsconfig.json",
     "dev": "bun scripts/dev.ts",
     "dev:clean": "bun scripts/dev-clean.ts",
     "extract": "bun scripts/extract-system-prompt.ts",

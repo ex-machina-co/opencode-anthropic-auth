@@ -81,6 +81,28 @@ The goal is to make redactions obviously fake so nobody mistakes them for real c
 
 ## Inspecting raw flows
 
+### Alternative: plaintext debug proxy (no mitmproxy cert)
+
+For CLIs that honor `ANTHROPIC_BASE_URL` (Claude Code, OpenCode, and this repo's server package), a simpler capture method exists that needs **no CA certificate**: point the base URL at a small localhost reverse proxy that logs request/response bodies in plaintext and forwards to `https://api.anthropic.com`.
+
+```bash
+# e.g. a ~40-line Bun proxy (listen on 127.0.0.1:8400, log JSON bodies, pipe upstream)
+ANTHROPIC_BASE_URL=http://127.0.0.1:8400 claude -p "say hello"
+```
+
+Since the CLI → proxy hop is plaintext HTTP on localhost, there is nothing to intercept TLS-wise; only the proxy → Anthropic leg is TLS, which the proxy terminates normally. This is how the 2.1.236 ground-truth traces behind `packages/server` were captured (full request headers/body as JSON + raw SSE responses).
+
+Trade-offs vs mitmproxy: only works for tools that support `ANTHROPIC_BASE_URL`, and the proxy must handle streaming (SSE) responses — but no cert generation/trust step at all.
+
+The verified Claude Code 2.1.236 headers/body, subscription-gate bisection
+matrix, tool-call shapes, SSE taxonomy, OAuth refresh flow, and exact re-tracing
+checklist are documented in
+[`packages/server/docs/protocol-mapping.md`](../packages/server/docs/protocol-mapping.md).
+Follow the redaction table above before moving any plaintext-proxy output out of
+`/tmp`.
+
+## Inspecting raw flows (mitmproxy)
+
 If you still have the `.flow` files (they're gitignored), you can inspect them with mitmproxy's tools:
 
 ```bash

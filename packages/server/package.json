@@ -1,0 +1,26 @@
+{
+  "name": "@ex-machina/claude-subscription-server",
+  "version": "0.1.0",
+  "description": "OpenAI-compatible API server backed by a Claude Pro/Max subscription",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ex-machina-co/opencode-anthropic-auth"
+  },
+  "type": "module",
+  "bin": {
+    "claude-subscription-server": "./src/index.ts"
+  },
+  "engines": {
+    "bun": ">=1.3.14"
+  },
+  "files": [
+    "src",
+    "docs"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "bun run src/index.ts",
+    "login": "bun run src/index.ts login",
+    "test": "bun test"
+  }
+}

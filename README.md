@@ -74,6 +74,10 @@ The Anthropic API for Max subscriptions has specific requirements for the system
 
 Everything else in the system prompt is preserved: tone/style guidance, task management instructions, tool usage policy, environment info, skills, user/project instructions, and file paths containing "opencode". The sanitized system prompt is structured as three blocks in `system[]`: the billing header, the Claude Code identity line, and the remaining system content.
 
+## Related: `claude-subscription-server`
+
+[`packages/server`](packages/server) contains `@ex-machina/claude-subscription-server` — a standalone server that reuses this plugin's Claude-Code-impersonation machinery to expose an **OpenAI-compatible API** (`/v1/chat/completions` with streaming and tool calling, `/v1/models`) backed by a Claude Pro/Max subscription. Any agent framework that speaks the OpenAI API can point at it. See [packages/server/README.md](packages/server/README.md) for setup (`login`, run, `SERVER_API_KEY`) and the [Pi `models.json` integration](packages/server/README.md#pi-coding-agent).
+
 ## Development
 
 ### Local Testing
