@@ -1,6 +1,30 @@
 {
   "lockfileVersion": 0.3,
   "facets": {
+    "facet-meta": {
+      "source": {
+        "kind": "registry",
+        "registry": "https://api.agentfacets.io"
+      },
+      "version": "1.0.0",
+      "integrity": "sha256:feffcd79aba75e6cefc65d7ed9d575ac0a89d84342668ca7684039ecb3f53084",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "using-facets",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/using-facets/SKILL.md",
+              "integrity": "sha256:5354584990bbbacdff621c23062a8540d1849884b94ce739f86b429057042d24"
+            }
+          ]
+        }
+      ]
+    },
     "viper-plans": {
       "source": {
         "kind": "registry",
@@ -76,6 +100,80 @@
             {
               "path": "commands/viper-run.md",
               "integrity": "sha256:ab4e2036931dc344424b52d0019e96853cf8e235e755a452e942953504000eee"
+            }
+          ]
+        }
+      ]
+    },
+    "worktrunk": {
+      "source": {
+        "kind": "registry",
+        "registry": "https://api.agentfacets.io"
+      },
+      "version": "0.1.0",
+      "integrity": "sha256:9a83ea1e20a7277f5a71ed2e19f1f5a23de6168fdb061d5ccbaaca15e2c76600",
+      "assets": [
+        {
+          "scope": "project",
+          "type": "skill",
+          "name": "using-worktrunk",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "skills/using-worktrunk/SKILL.md",
+              "integrity": "sha256:5176af6d234b0c79f607e034c2792cd0e8fc6c28dbfd01dcb62afe04d835c603"
+            },
+            {
+              "path": "skills/using-worktrunk/install.md",
+              "integrity": "sha256:c25bb51bb92b95d636066938e1fee4b879a3611780bf093b52aba50164cb518a"
+            },
+            {
+              "path": "skills/using-worktrunk/reference/faq.md",
+              "integrity": "sha256:dd9a6506674e18855c5131af322f1b8a4e37a52d956fd607c21d2b2348586d6b"
+            },
+            {
+              "path": "skills/using-worktrunk/reference/list.md",
+              "integrity": "sha256:79451f8d3ac4e0ecfd9a9cb87ec62293b35f4c8d61761e1d5ef3fbb0eaf598d4"
+            },
+            {
+              "path": "skills/using-worktrunk/reference/merge.md",
+              "integrity": "sha256:3ed6cf71ca409302d8bfb53388d7d0d727ee24f48af6128fbde2398d88ac8fa9"
+            },
+            {
+              "path": "skills/using-worktrunk/reference/remove.md",
+              "integrity": "sha256:c604069ea4525019f2b6cf082c2ff1cc6f1a3ced604b7bb44e1e1a647d769e65"
+            },
+            {
+              "path": "skills/using-worktrunk/reference/shell-integration.md",
+              "integrity": "sha256:b617dca30ecdebc84d05701556098d9ded2dbf5f39849b625c3d799a49d576c8"
+            },
+            {
+              "path": "skills/using-worktrunk/reference/step.md",
+              "integrity": "sha256:d55aaec34eac79081dfb05819a052b4ef5ed58d6953e792e21d64381d2bc16fc"
+            },
+            {
+              "path": "skills/using-worktrunk/reference/switch.md",
+              "integrity": "sha256:5a479efe180c1fca1f50987a9c746bab0c847447110f90c1c5eb4625e2c4b30f"
+            },
+            {
+              "path": "skills/using-worktrunk/reference/worktrunk.md",
+              "integrity": "sha256:a6a279cfe47617e6cc7a677a61feede6f5b133bad06a73ed8279b9b3202de16d"
+            }
+          ]
+        },
+        {
+          "scope": "project",
+          "type": "command",
+          "name": "wt-switch-create",
+          "materialization": {
+            "kind": "authored"
+          },
+          "files": [
+            {
+              "path": "commands/wt-switch-create.md",
+              "integrity": "sha256:83eceb6ba0e8b8efd4d192dcfb2443740cb90c65b92edd95b64e92f0d9760ed9"
             }
           ]
         }
