@@ -122,16 +122,6 @@ describe('setOAuthHeaders', () => {
     expect(headers.get('user-agent')).toContain('claude-cli')
   })
 
-  // The user-agent and the billing header's cc_version must report the same
-  // version; Anthropic gates model access on it.
-  test('reports CLAUDE_CODE_VERSION in the user-agent', () => {
-    const headers = new Headers()
-    setOAuthHeaders(headers, 'token')
-    expect(headers.get('user-agent')).toBe(
-      `claude-cli/${CLAUDE_CODE_VERSION} (external, cli)`,
-    )
-  })
-
   test('removes x-api-key', () => {
     const headers = new Headers({ 'x-api-key': 'sk-ant-xxx' })
     setOAuthHeaders(headers, 'token')
@@ -834,6 +824,27 @@ describe('rewriteRequestBody', () => {
 
     // User message is untouched
     expect(result.messages[0].content).toBe('hi')
+  })
+})
+
+describe('reported Claude Code version', () => {
+  // Anthropic gates model access on the version we report, and we report it
+  // twice: in the user-agent header and in the billing header's cc_version.
+  // If those ever disagree, one of them is stale and new models start failing
+  // with a 400 claude_code_version_too_old. Assert both against the constant.
+  test('user-agent and billing header both report CLAUDE_CODE_VERSION', () => {
+    const headers = new Headers()
+    setOAuthHeaders(headers, 'token')
+    expect(headers.get('user-agent')).toBe(
+      `claude-cli/${CLAUDE_CODE_VERSION} (external, cli)`,
+    )
+
+    const body = JSON.stringify({
+      messages: [{ role: 'user', content: 'hello world test message' }],
+    })
+    const billingHeader = JSON.parse(rewriteRequestBody(body)).system[0].text
+    // cc_version is `<version>.<3-char suffix>`, so match the version segment.
+    expect(billingHeader).toContain(`cc_version=${CLAUDE_CODE_VERSION}.`)
   })
 })
 
