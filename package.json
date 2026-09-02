@@ -25,7 +25,8 @@
     "format:check": "biome format .",
     "lint": "biome lint .",
     "change": "changeset",
-    "release": "bun run build && bun change publish"
+    "release": "bun run build && bun change publish",
+    "release:next": "bun scripts/validate-next-release.ts && bun run release"
   },
   "peerDependencies": {
     "@opencode-ai/plugin": "*"

@@ -23,11 +23,19 @@ Not every PR needs a changeset — changes to docs, CI, or other non-published f
 
 ### Releases
 
-When changesets are merged to `main`, the [publish workflow](../.github/workflows/publish.yml) automatically:
+When changesets are merged to a release branch, the [publish workflow](../.github/workflows/publish.yml) automatically:
 
 1. Runs `bun change version` to consume all pending changesets, bump the version, and update the changelog
 2. Opens a release PR with the result
-3. When that PR is merged, runs `bun change publish` to publish to npm
+3. When that PR is merged, publishes to npm
+
+This branch (`v2/main`) is permanently in changesets prerelease mode under the `next` tag —
+`pre.json` in this directory is committed state, not scratch state, and must never be deleted.
+It publishes `2.x.y-next.N` to npm's `next` tag, while `main` publishes the v1 line to `latest`.
+
+**[RELEASING.md](../RELEASING.md) is the authoritative runbook** for both trains, the publish
+guard that prevents a v1-shaped prerelease from reaching the `next` tag, and the manual
+`main` → `v2/main` sync process.
 
 ### Adding changesets on behalf of contributors
 

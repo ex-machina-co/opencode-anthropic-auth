@@ -3,10 +3,10 @@ name: Publish
 on:
   push:
     branches:
-      - main
+      - v2/main
 
 concurrency:
-  group: publish
+  group: publish-v2-next
 
 jobs:
   publish:
@@ -39,9 +39,9 @@ jobs:
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
           version: bun change version
-          publish: bun run release
-          commit: "chore: version package"
-          title: "chore: version package"
+          publish: bun run release:next
+          commit: "chore(v2): version next package"
+          title: "chore(v2): version next package"
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           NODE_AUTH_TOKEN: ""
