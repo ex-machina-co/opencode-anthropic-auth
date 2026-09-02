@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+# CodeRabbit only auto-reviews PRs targeting the default branch. This repository runs a
+# second, long-lived release branch — `v2/main`, the OpenCode v2 line — so PRs against it
+# were being skipped with "Auto reviews are disabled on base/target branches other than
+# the default branch". Registering it here restores review coverage for that train.
+#
+# `inheritance: true` is load-bearing. A repository config outranks the organization UI
+# settings, so without it this file would *replace* the org configuration wholesale rather
+# than adding one key to it. With inheritance on, CodeRabbit deep-merges the parent
+# settings and only the values below win.
+# https://docs.coderabbit.ai/configuration/configuration-inheritance
+inheritance: true
+
+reviews:
+  auto_review:
+    base_branches:
+      - v2/main
