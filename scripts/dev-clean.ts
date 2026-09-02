@@ -1,7 +1,13 @@
 import { existsSync, unlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-const SYMLINK_PATH = resolve(import.meta.dirname, '..', '.opencode', 'plugins', 'anthropic-auth.js')
+const SYMLINK_PATH = resolve(
+  import.meta.dirname,
+  '..',
+  '.opencode',
+  'plugins',
+  'anthropic-auth.js',
+)
 
 if (existsSync(SYMLINK_PATH)) {
   unlinkSync(SYMLINK_PATH)

@@ -18,7 +18,10 @@ export const EXPECTED_PACKAGE_NAME = '@ex-machina/opencode-anthropic-auth'
 export const EXPECTED_PRE_TAG = 'next'
 export const EXPECTED_MAJOR = 2
 
-const NEXT_VERSION_PATTERN = /^(\d+)\.\d+\.\d+-next\.\d+$/
+/** `<major>.<minor>.<patch>-<EXPECTED_PRE_TAG>.<counter>`, capturing the major. */
+const NEXT_VERSION_PATTERN = new RegExp(
+  String.raw`^(\d+)\.\d+\.\d+-${EXPECTED_PRE_TAG}\.\d+$`,
+)
 
 /**
  * State of `.changeset/pre.json`.
@@ -32,7 +35,11 @@ export type PreStateSource =
   | { readonly kind: 'present'; readonly raw: unknown }
 
 export type ReleaseGuardVerdict =
-  | { readonly status: 'allowed'; readonly version: string; readonly tag: string }
+  | {
+      readonly status: 'allowed'
+      readonly version: string
+      readonly tag: string
+    }
   | { readonly status: 'blocked'; readonly reason: string }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -90,7 +97,10 @@ export function checkNextRelease(input: {
   const pre = preState.raw
 
   if (!isRecord(pre)) {
-    return { status: 'blocked', reason: '.changeset/pre.json is not a JSON object.' }
+    return {
+      status: 'blocked',
+      reason: '.changeset/pre.json is not a JSON object.',
+    }
   }
 
   if (pre.mode !== 'pre') {
@@ -152,7 +162,7 @@ function readPreState(root: string): PreStateSource {
 }
 
 if (import.meta.main) {
-  const root = resolve(import.meta.dirname!, '..')
+  const root = resolve(import.meta.dir, '..')
 
   const verdict = checkNextRelease({
     packageJson: readPackageJson(root),
@@ -164,5 +174,7 @@ if (import.meta.main) {
     process.exit(1)
   }
 
-  console.log(`[release:next] Publishing ${EXPECTED_PACKAGE_NAME}@${verdict.version} to "${verdict.tag}".`)
+  console.log(
+    `[release:next] Publishing ${EXPECTED_PACKAGE_NAME}@${verdict.version} to "${verdict.tag}".`,
+  )
 }

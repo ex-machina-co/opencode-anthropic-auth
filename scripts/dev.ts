@@ -19,7 +19,9 @@ function createSymlink() {
     try {
       const current = readlinkSync(SYMLINK_PATH)
       if (current === TARGET) {
-        console.log(`[dev] Symlink already exists: ${SYMLINK_PATH} -> ${TARGET}`)
+        console.log(
+          `[dev] Symlink already exists: ${SYMLINK_PATH} -> ${TARGET}`,
+        )
         return
       }
     } catch {}
@@ -57,11 +59,14 @@ createSymlink()
 // 3. Start tsc --watch
 console.log('[dev] Starting tsc --watch...')
 console.log('[dev] Restart OpenCode to pick up the linked plugin.')
-const child = Bun.spawn(['tsc', '-p', 'tsconfig.build.json', '--watch', '--preserveWatchOutput'], {
-  cwd: PROJECT_ROOT,
-  stdout: 'inherit',
-  stderr: 'inherit',
-})
+const child = Bun.spawn(
+  ['tsc', '-p', 'tsconfig.build.json', '--watch', '--preserveWatchOutput'],
+  {
+    cwd: PROJECT_ROOT,
+    stdout: 'inherit',
+    stderr: 'inherit',
+  },
+)
 
 function cleanup() {
   console.log('\n[dev] Cleaning up...')

@@ -17,7 +17,7 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["src/**", "script/**", "*.json", "*.yml"]
+    "includes": ["src/**", "scripts/**", "*.json", "*.yml"]
   },
   "overrides": [
     {
