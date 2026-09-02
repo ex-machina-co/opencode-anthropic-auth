@@ -32,10 +32,20 @@ export const CLAUDE_CODE_IDENTITY =
 
 export const CCH_SALT = '59cf53e54c78'
 export const CCH_POSITIONS = [4, 7, 20]
-export const CLAUDE_CODE_VERSION = '2.1.87'
+/**
+ * The Claude Code version we report to Anthropic, via both the `user-agent`
+ * header and the `cc_version` field of the billing header.
+ *
+ * Anthropic gates new models on this value server-side: requesting a model
+ * newer than the reported client returns a 400 `claude_code_version_too_old`
+ * (e.g. "Claude Code 2.1.87 does not support this model; version 2.1.251 or
+ * newer is required"). Keep this at or above the latest published
+ * `@anthropic-ai/claude-code` release, otherwise new models are unreachable.
+ */
+export const CLAUDE_CODE_VERSION = '2.1.258'
 export const CLAUDE_CODE_ENTRYPOINT = 'sdk-cli'
 
-export const USER_AGENT = 'claude-cli/2.1.87 (external, cli)'
+export const USER_AGENT = `claude-cli/${CLAUDE_CODE_VERSION} (external, cli)`
 
 /**
  * Anchors that identify paragraphs to remove from the system prompt.

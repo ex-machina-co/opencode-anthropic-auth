@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test'
 import dedent from 'dedent'
 import {
   CLAUDE_CODE_IDENTITY,
+  CLAUDE_CODE_VERSION,
   OPENCODE_IDENTITY_PREFIX,
   REQUIRED_BETAS,
 } from '../constants'
@@ -119,6 +120,16 @@ describe('setOAuthHeaders', () => {
     const headers = new Headers()
     setOAuthHeaders(headers, 'token')
     expect(headers.get('user-agent')).toContain('claude-cli')
+  })
+
+  // The user-agent and the billing header's cc_version must report the same
+  // version; Anthropic gates model access on it.
+  test('reports CLAUDE_CODE_VERSION in the user-agent', () => {
+    const headers = new Headers()
+    setOAuthHeaders(headers, 'token')
+    expect(headers.get('user-agent')).toBe(
+      `claude-cli/${CLAUDE_CODE_VERSION} (external, cli)`,
+    )
   })
 
   test('removes x-api-key', () => {
