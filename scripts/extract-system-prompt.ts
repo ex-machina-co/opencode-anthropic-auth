@@ -140,10 +140,10 @@ const systemText = best.system
   .join('\n\n')
 
 if (values.output) {
-  writeFileSync(values.output, systemText + '\n')
+  writeFileSync(values.output, `${systemText}\n`)
   console.log(
     `Extracted system prompt (${systemText.length} chars) → ${values.output}`,
   )
 } else {
-  process.stdout.write(systemText + '\n')
+  process.stdout.write(`${systemText}\n`)
 }

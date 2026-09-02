@@ -162,7 +162,7 @@ function readPreState(root: string): PreStateSource {
 }
 
 if (import.meta.main) {
-  const root = resolve(import.meta.dir, '..')
+  const root = resolve(import.meta.dirname, '..')
 
   const verdict = checkNextRelease({
     packageJson: readPackageJson(root),

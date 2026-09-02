@@ -7,7 +7,7 @@ import {
 } from 'node:fs'
 import { resolve } from 'node:path'
 
-const PROJECT_ROOT = resolve(import.meta.dirname!, '..')
+const PROJECT_ROOT = resolve(import.meta.dirname, '..')
 const PLUGINS_DIR = resolve(PROJECT_ROOT, '.opencode', 'plugins')
 const SYMLINK_PATH = resolve(PLUGINS_DIR, 'anthropic-auth.js')
 const TARGET = '../../dist/index.js' // relative from .opencode/plugins/
