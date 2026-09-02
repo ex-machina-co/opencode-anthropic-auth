@@ -29,8 +29,10 @@ When changesets are merged to a release branch, the [publish workflow](../.githu
 2. Opens a release PR with the result
 3. When that PR is merged, publishes to npm
 
-This branch (`v2/main`) is permanently in changesets prerelease mode under the `next` tag —
-`pre.json` in this directory is committed state, not scratch state, and must never be deleted.
+This branch (`v2/main`) stays in changesets prerelease mode under the `next` tag for as long
+as v2 ships as a prerelease — `pre.json` in this directory is committed state, not scratch
+state. Never delete it as part of ordinary work or conflict resolution. The single exception
+is the deliberate promotion to `latest`, where `changeset pre exit` retires it on purpose.
 It publishes `2.x.y-next.N` to npm's `next` tag, while `main` publishes the v1 line to `latest`.
 
 **[RELEASING.md](../RELEASING.md) is the authoritative runbook** for both trains, the publish

@@ -13,8 +13,10 @@ This is the authoritative maintainer runbook for both release trains. `README.md
 Both branches publish the **same** npm package, `@ex-machina/opencode-anthropic-auth`.
 There is no separate `-next` package.
 
-`latest` belongs to v1 until we decide v2 is the default. `v2/main` is permanently in
-changesets prerelease mode, so it can never take `latest` by accident.
+`latest` belongs to v1 until we decide v2 is the default. `v2/main` stays in changesets
+prerelease mode for as long as v2 ships as a prerelease, so it can never take `latest` by
+accident. Leaving that mode is a deliberate, reviewed step — see
+[Promotion to `latest`](#promotion-to-latest-deferred).
 
 `v2/main` is a long-lived branch, not a feature branch. It is never merged back into
 `main`; changes flow one way, `main` → `v2/main`.
@@ -27,14 +29,18 @@ v1 (default):
 { "plugin": ["@ex-machina/opencode-anthropic-auth"] }
 ```
 
-v2 prerelease (opt-in), using OpenCode v2's `plugins` key. Pin exactly — `@next` moves
-whenever a prerelease publishes:
+v2 prerelease (opt-in), using OpenCode v2's `plugins` key. Substitute a prerelease that
+actually exists — `npm view @ex-machina/opencode-anthropic-auth dist-tags` shows the current
+`next`:
 
 ```json
-{ "plugins": ["@ex-machina/opencode-anthropic-auth@2.0.0-next.0"] }
+{ "plugins": ["@ex-machina/opencode-anthropic-auth@<2.x.y-next.N>"] }
 ```
 
-Nothing is published to `next` yet; the first prerelease waits on the v2 port.
+Pin the exact version rather than tracking `@next`, which moves on every prerelease publish.
+
+Nothing is published to `next` yet — the first prerelease waits on the v2 port — so there is
+no version to substitute until then.
 
 ## Releasing v1 from `main`
 
@@ -133,7 +139,7 @@ anything that defines the v2 release train:
 
 | File | Resolution |
 |---|---|
-| `.changeset/pre.json` | Keep v2's. Never delete it. |
+| `.changeset/pre.json` | Keep v2's. Never delete it here — only promotion retires it. |
 | `.changeset/config.json` | Keep v2's `"baseBranch": "v2/main"`. |
 | `.github/workflows/publish.yml` | Keep v2's trigger, concurrency group, titles, and `release:next`. Take any genuine infrastructure improvement from `main` (action bumps, node version) by hand. |
 | `package.json` version | Keep v2's `-next` version. Never take `main`'s `1.x.y`. |
