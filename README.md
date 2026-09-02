@@ -31,7 +31,7 @@ Add the plugin to your OpenCode configuration:
 
 ```json
 {
-  "plugin": ["@ex-machina/opencode-anthropic-auth@1.8.1"]
+  "plugin": ["@ex-machina/opencode-anthropic-auth@1.8.2"]
 }
 ```
 
