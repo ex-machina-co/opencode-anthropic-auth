@@ -10,6 +10,14 @@ export const CODE_CALLBACK_URL =
 
 export const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token'
 
+/**
+ * OAuth profile endpoint. With a valid account access token (Bearer) it returns
+ * the signed-in account, including `account.email`. Used to label stored
+ * accounts by their email so they're distinguishable in the account store and
+ * failover debug logs.
+ */
+export const PROFILE_URL = 'https://api.anthropic.com/api/oauth/profile'
+
 export const OAUTH_SCOPES = [
   'org:create_api_key',
   'user:profile',

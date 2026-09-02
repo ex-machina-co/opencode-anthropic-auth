@@ -84,6 +84,59 @@ describe('exchange', () => {
     expect(body.redirect_uri).toBe(CODE_CALLBACK_URL)
   })
 
+  test('parses account email from the token response', async () => {
+    spyOn(globalThis, 'fetch').mockImplementation(((
+      _input: string | URL | Request,
+      _init?: RequestInit,
+    ) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            refresh_token: 'r',
+            access_token: 'a',
+            expires_in: 3600,
+            account: { email_address: 'me@example.com' },
+          }),
+          { status: 200 },
+        ),
+      )) as typeof fetch)
+
+    const result = await exchange(
+      'mycode#mystate',
+      'myverifier',
+      CODE_CALLBACK_URL,
+      'mystate',
+    )
+
+    expect(result.type).toBe('success')
+    if (result.type === 'success') {
+      expect(result.email).toBe('me@example.com')
+    }
+  })
+
+  test('omits email when the token response has none', async () => {
+    spyOn(globalThis, 'fetch').mockImplementation(((
+      _input: string | URL | Request,
+      _init?: RequestInit,
+    ) =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            refresh_token: 'r',
+            access_token: 'a',
+            expires_in: 3600,
+          }),
+          { status: 200 },
+        ),
+      )) as typeof fetch)
+
+    const result = await exchange('c#s', 'v', CODE_CALLBACK_URL, 's')
+    expect(result.type).toBe('success')
+    if (result.type === 'success') {
+      expect(result.email).toBeUndefined()
+    }
+  })
+
   test('accepts a full callback URL', async () => {
     let capturedBody: string | undefined
 

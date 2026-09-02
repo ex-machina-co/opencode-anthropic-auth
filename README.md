@@ -44,6 +44,51 @@ The plugin provides three authentication options:
 - **Create an API Key** - OAuth flow via `console.anthropic.com` that creates an API key on your behalf.
 - **Manually enter API Key** - Standard API key entry for users who already have one.
 
+## Multiple Accounts & Automatic Failover
+
+You can authenticate multiple Claude Pro/Max accounts and have the plugin
+automatically switch between them when one hits a usage/rate limit — so a long
+session keeps going instead of stopping when a single account is exhausted.
+
+### Adding accounts
+
+Sign in with **Claude Pro/Max** more than once, each time with a **different**
+Claude account. Every login is saved to a plugin-owned account pool (labeled by
+email, deduplicated by account) and becomes the current primary. There is no
+separate "add account" step — failover is transparent.
+
+> Failover only helps across **distinct** Claude accounts. Multiple logins of
+> the *same* account share one usage quota, so the plugin deduplicates by email.
+
+### How it works
+
+On every request the plugin builds an ordered list of candidate accounts:
+
+1. The primary (OpenCode's) account first.
+2. Then each additional account that isn't currently cooling down.
+3. Then, as a last resort, accounts that *are* cooling down.
+
+Failover triggers on an HTTP error status (`429`, `401`, `403`, `529`) **or** an
+error event inside a `200 OK` streaming response (Claude Pro/Max usage limits
+often arrive as a `rate_limit_error` SSE event, not a `429`). The exhausted
+account is put on a cooldown (respecting `Retry-After`) and the same request is
+transparently retried on the next account; an error is only surfaced once every
+account has failed. When a non-primary account serves a request, it is promoted
+into OpenCode's credential slot so later requests start from a healthy account.
+
+### Where accounts are stored
+
+Accounts live in a plugin-owned JSON file (mode `0600`):
+
+- `$ANTHROPIC_ACCOUNTS_PATH` if set, otherwise
+- `$XDG_DATA_HOME/opencode-anthropic-auth/accounts.json`, otherwise
+- `~/.local/share/opencode-anthropic-auth/accounts.json`
+
+Each entry records the account `email` (its label), OAuth tokens, any
+`cooldownUntil` timestamp, and a `primary: true` flag on the active account.
+Set `ANTHROPIC_FAILOVER_DEBUG=1` to log candidate selection and failover
+decisions to stderr.
+
 ## Configuration
 
 The plugin supports the following environment variables:
@@ -52,6 +97,8 @@ The plugin supports the following environment variables:
 |-----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `ANTHROPIC_BASE_URL`              | Override the API endpoint URL (e.g. for proxying). Must be a valid HTTP(S) URL.                                                                                                             |
 | `ANTHROPIC_INSECURE`              | Set to `1` or `true` to skip TLS certificate verification. Only effective when `ANTHROPIC_BASE_URL` is also set.                                                                            |
+| `ANTHROPIC_ACCOUNTS_PATH`         | Override the path to the multi-account store file. Defaults to `$XDG_DATA_HOME/opencode-anthropic-auth/accounts.json` (or `~/.local/share/...`).                                            |
+| `ANTHROPIC_FAILOVER_DEBUG`        | Set to `1` or `true` to log multi-account candidate selection and failover decisions to stderr.                                                                                             |
 
 ## How It Works
 

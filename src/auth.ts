@@ -84,13 +84,19 @@ async function exchangeCode(
     refresh_token: string
     access_token: string
     expires_in: number
+    account?: { email?: string; email_address?: string }
   }
+
+  // Accept either `email` or `email_address` depending on the response shape.
+  const rawEmail = json.account?.email ?? json.account?.email_address
+  const email = typeof rawEmail === 'string' ? rawEmail : undefined
 
   return {
     type: 'success',
     refresh: json.refresh_token,
     access: json.access_token,
     expires: Date.now() + json.expires_in * 1000,
+    ...(email ? { email } : {}),
   }
 }
 
@@ -119,7 +125,13 @@ export async function authorize(
 }
 
 export type ExchangeResult =
-  | { type: 'success'; refresh: string; access: string; expires: number }
+  | {
+      type: 'success'
+      refresh: string
+      access: string
+      expires: number
+      email?: string
+    }
   | { type: 'failed' }
 
 export async function exchange(
