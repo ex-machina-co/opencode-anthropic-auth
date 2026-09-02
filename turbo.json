@@ -1,0 +1,18 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "globalDependencies": ["bun.lock", "mise.toml"],
+  "globalPassThroughEnv": ["ANTHROPIC_BASE_URL", "ANTHROPIC_INSECURE"],
+  "tasks": {
+    "check:all": {
+      "dependsOn": ["types", "build", "test", "format:check", "lint"]
+    },
+    "types": {},
+    "build": {
+      "outputs": ["dist/**"]
+    },
+    "test": {},
+    "format:check": {},
+    "lint": {}
+  },
+  "ui": "tui"
+}

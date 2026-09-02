@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import dedent from 'dedent'
 import {
   CLAUDE_CODE_IDENTITY,
@@ -225,6 +225,10 @@ describe('stripToolPrefix', () => {
 
 describe('rewriteUrl', () => {
   const originalEnv = process.env.ANTHROPIC_BASE_URL
+
+  beforeEach(() => {
+    delete process.env.ANTHROPIC_BASE_URL
+  })
 
   afterEach(() => {
     if (originalEnv === undefined) {
