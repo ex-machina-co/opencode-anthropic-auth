@@ -2,4 +2,4 @@ pre-commit:
   commands:
     biome:
       glob: "*.{ts,js,json}"
-      run: bunx biome check {staged_files}
+      run: bunx biome check --no-errors-on-unmatched {staged_files}

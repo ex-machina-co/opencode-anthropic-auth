@@ -60,9 +60,24 @@ Safely forward-port `origin/main` into `origin/v2/main` on a local branch named 
 - Identify any changes that require replacement v2 changesets.
 - Inspect prior sync commits and PRs when they clarify expected resolutions.
 
-### Step 5 - Propose: Present the exact synchronization strategy
+### Step 5 - Review: Discuss complex forward-port findings when needed
 
-Present for approval:
+Use judgment to determine whether the analysis found complexity, ambiguity, or consequential
+tradeoffs that would benefit from user discussion.
+
+If the forward-port is straightforward and no user direction would materially affect the strategy,
+mark this review unnecessary and proceed directly to Step 6 without calling the `question` tool.
+
+Otherwise:
+
+- Present the relevant findings, uncertainties, tradeoffs, and available options in the message text.
+- Ask the user for feedback using the `question` tool with a short prompt.
+- Resolve or record the user’s direction before continuing.
+- Carry that direction into the synchronization strategy proposed in Step 6.
+
+### Step 6 - Propose: Present the exact synchronization strategy
+
+Present for approval, incorporating any direction obtained in Step 5:
 
 - The commits and changes being forwarded.
 - How an existing `v2/sync/main`, if any, will be handled without destructive reset.
@@ -73,12 +88,12 @@ Present for approval:
 
 Do not alter the checkout until the proposal is approved.
 
-### Step 6 - Pause: Switch model for implementation
+### Step 7 - Pause: Switch model for implementation
 
-### Step 7 - Implement: Prepare the local `v2/sync/main` merge
+### Step 8 - Implement: Prepare the local `v2/sync/main` merge
 
 - Create and switch to `v2/sync/main` from `origin/v2/main`.
-- If the branch already exists, follow only the approved non-destructive handling from Step 5.
+- If the branch already exists, follow only the approved non-destructive handling from Step 6.
 - Merge `origin/main`.
 - Resolve release-owned conflicts according to `RELEASING.md`:
   - Preserve v2 prerelease state and Changesets base branch.
@@ -92,7 +107,7 @@ Do not alter the checkout until the proposal is approved.
 - Complete the merge commit on the local branch.
 - Do not push or create a PR.
 
-### Step 8 - Verify: Validate the merged tree and release invariants
+### Step 9 - Verify: Validate the merged tree and release invariants
 
 Run:
 
@@ -117,7 +132,7 @@ Also verify:
 - Every incoming user-visible change has transferred or replacement release intent.
 - No remote branch, PR, tag, release, or package was created.
 
-### Step 9 - Review: Present the verified local synchronization
+### Step 10 - Review: Present the verified local synchronization
 
 Report:
 
@@ -134,9 +149,9 @@ Ask the user to choose whether to:
 2. Push `v2/sync/main` and open a PR.
 3. Request further local changes.
 
-### Step 10 - Implement: Optionally submit the synchronization PR
+### Step 11 - Implement: Optionally submit the synchronization PR
 
-Only if explicitly approved in Step 9:
+Only if explicitly approved in Step 10:
 
 - Push `v2/sync/main` without force.
 - Open a PR targeting `v2/main` titled `chore: sync main into v2/main`.
@@ -144,7 +159,7 @@ Only if explicitly approved in Step 9:
 
 If the user chooses to keep the branch local, perform no remote mutation. Never merge the PR.
 
-### Step 11 - Verify: Confirm the selected final state
+### Step 12 - Verify: Confirm the selected final state
 
 - If kept local, confirm the verified branch remains available locally and no new remote branch or PR was created.
 - If submitted, confirm the remote branch and PR target `v2/main`, inspect initial checks, and report their status.

@@ -30,8 +30,8 @@
         "kind": "local",
         "path": "./facets/main-to-v2-sync"
       },
-      "version": "0.1.0",
-      "integrity": "sha256:b3f5a84f6f87ebd5cc2ce1ca27e75474185c52ab9118708d44a2f257fdfd27dc",
+      "version": "0.1.1",
+      "integrity": "sha256:3309150c306fb40c4d15c1e2077d23bc434edd77ccd4d3c888bc913b5c5e3a98",
       "assets": [
         {
           "scope": "project",
@@ -47,7 +47,7 @@
             },
             {
               "path": "skills/sync-main-to-v2/references/plan.md",
-              "integrity": "sha256:20851f9d663afede0c96b79bf4cde9c3637cc39aa90d9d469b123eeed99c2f27"
+              "integrity": "sha256:a87604c2ebb1b2ecc00dfb965f87bf5d5723f67eb1711588638447bbb7606a5a"
             }
           ]
         },
