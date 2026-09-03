@@ -1,5 +1,11 @@
 # @ex-machina/opencode-anthropic-auth
 
+## 1.8.4
+
+### Patch Changes
+
+- [#229](https://github.com/ex-machina-co/opencode-anthropic-auth/pull/229) [`774acbf`](https://github.com/ex-machina-co/opencode-anthropic-auth/commit/774acbfccf3d8d59b00147759ef1cfa4e3c531ee) Thanks [@eXamadeus](https://github.com/eXamadeus)! - Allow the reported Claude Code version to be configured via the `ANTHROPIC_CLAUDE_CODE_VERSION` environment variable. Anthropic gates model access on this value server-side and moves that gate on its own schedule, so a newly-gated model previously required waiting for a plugin release. Setting `ANTHROPIC_CLAUDE_CODE_VERSION` to a `major.minor.patch` value now overrides the bundled default for both places the version is reported — the `user-agent` header and the billing header's `cc_version` — which are resolved from a single value so they cannot disagree. The variable is read once at startup; a malformed value is logged as an error and the bundled version is used instead, and a value older than the bundled version is honored but logged as a warning, since reporting an older version is what triggers the gate in the first place. Thanks to @johnnymo87 for pointing out that a lower override silently defeats the purpose of the setting.
+
 ## 1.8.3
 
 ### Patch Changes
