@@ -1,6 +1,6 @@
 {
   "name": "main-to-v2-sync",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Run the repository's main to v2/main synchronization workflow as a VIPER plan",
   "private": true,
   "skills": {
