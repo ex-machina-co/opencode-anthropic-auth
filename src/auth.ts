@@ -1,4 +1,10 @@
 import {
+  BodyLimitError,
+  contentLength,
+  InvalidUtf8Error,
+  readBoundedText,
+} from './bounded.ts'
+import {
   AUTHORIZE_URLS,
   CLIENT_ID,
   CODE_CALLBACK_URL,
@@ -18,7 +24,38 @@ type TokenResponse = {
   expires_in: number
 }
 
-const REFRESH_TIMEOUT_MS = 30_000
+const TOKEN_TIMEOUT_MS = 30_000
+const MAX_TOKEN_RESPONSE_BYTES = 64 * 1024
+const MAX_TOKEN_LENGTH = 8 * 1024
+const MAX_CALLBACK_INPUT_BYTES = 16 * 1024
+const MAX_VERIFIER_BYTES = 1024
+const MAX_REDIRECT_URI_BYTES = 2 * 1024
+
+function isWellFormedUtf16(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index)
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      if (index + 1 >= value.length) return false
+      const next = value.charCodeAt(index + 1)
+      if (next < 0xdc00 || next > 0xdfff) return false
+      index += 1
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      return false
+    }
+  }
+  return true
+}
+
+function isBoundedUtf8(value: string, maxBytes: number): boolean {
+  if (
+    value.length === 0 ||
+    value.length > maxBytes ||
+    !isWellFormedUtf16(value)
+  ) {
+    return false
+  }
+  return new TextEncoder().encode(value).byteLength <= maxBytes
+}
 
 function isTokenResponse(value: unknown): value is TokenResponse {
   if (typeof value !== 'object' || value === null) return false
@@ -26,9 +63,9 @@ function isTokenResponse(value: unknown): value is TokenResponse {
   if (!('expires_in' in value)) return false
   return (
     typeof value.refresh_token === 'string' &&
-    value.refresh_token.length > 0 &&
+    isBoundedUtf8(value.refresh_token, MAX_TOKEN_LENGTH) &&
     typeof value.access_token === 'string' &&
-    value.access_token.length > 0 &&
+    isBoundedUtf8(value.access_token, MAX_TOKEN_LENGTH) &&
     typeof value.expires_in === 'number' &&
     Number.isSafeInteger(value.expires_in) &&
     value.expires_in > 0
@@ -36,8 +73,22 @@ function isTokenResponse(value: unknown): value is TokenResponse {
 }
 
 async function parseTokenResponse(response: Response) {
+  const declaredLength = contentLength(response.headers)
+  if (
+    declaredLength !== undefined &&
+    declaredLength > MAX_TOKEN_RESPONSE_BYTES
+  ) {
+    await response.body?.cancel().catch(() => {})
+    return undefined
+  }
+
   try {
-    const value: unknown = await response.json()
+    const text = await readBoundedText(
+      response.body,
+      MAX_TOKEN_RESPONSE_BYTES,
+      'Anthropic token response',
+    )
+    const value: unknown = JSON.parse(text)
     if (!isTokenResponse(value)) return undefined
     const expires = Date.now() + value.expires_in * 1000
     if (!Number.isSafeInteger(expires)) return undefined
@@ -47,9 +98,66 @@ async function parseTokenResponse(response: Response) {
       expires,
     }
   } catch (error) {
-    if (error instanceof SyntaxError) return undefined
+    if (
+      error instanceof SyntaxError ||
+      error instanceof BodyLimitError ||
+      error instanceof InvalidUtf8Error
+    ) {
+      return undefined
+    }
     throw error
   }
+}
+
+function isTransientNetworkError(error: unknown): boolean {
+  const seen = new WeakSet<object>()
+  let current: unknown = error
+
+  for (let depth = 0; depth < 8; depth++) {
+    if (typeof current !== 'object' || current === null) return false
+    if (seen.has(current)) return false
+    seen.add(current)
+
+    if (
+      'name' in current &&
+      (current.name === 'TimeoutError' || current.name === 'AbortError')
+    ) {
+      return true
+    }
+
+    if ('code' in current) {
+      const code = current.code
+      if (
+        code === 'ECONNRESET' ||
+        code === 'ECONNREFUSED' ||
+        code === 'ETIMEDOUT' ||
+        code === 'EPIPE' ||
+        code === 'ENETUNREACH' ||
+        code === 'EAI_AGAIN' ||
+        code === 'UND_ERR_CONNECT_TIMEOUT' ||
+        code === 'UND_ERR_SOCKET'
+      ) {
+        return true
+      }
+    }
+
+    const message =
+      current instanceof Error ? current.message.toLowerCase() : ''
+    if (
+      message === 'fetch failed' ||
+      message === 'terminated' ||
+      message === 'network error' ||
+      message.includes('socket hang up') ||
+      message.includes('other side closed')
+    ) {
+      return true
+    }
+
+    if (!('cause' in current)) return false
+    current = current.cause
+  }
+
+  return false
 }
 
 export type AuthorizationResult = {
@@ -97,24 +205,33 @@ async function exchangeCode(
   verifier: string,
   redirectUri: string,
 ): Promise<ExchangeResult> {
-  const result = await fetch(TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json, text/plain, */*',
-      'User-Agent': 'axios/1.13.6',
-    },
-    body: JSON.stringify({
-      code: callback.code,
-      state: callback.state,
-      grant_type: 'authorization_code',
-      client_id: CLIENT_ID,
-      redirect_uri: redirectUri,
-      code_verifier: verifier,
-    }),
-  })
+  let result: Response
+  try {
+    result = await fetch(TOKEN_URL, {
+      method: 'POST',
+      signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
+      redirect: 'error',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/plain, */*',
+        'User-Agent': 'axios/1.13.6',
+      },
+      body: JSON.stringify({
+        code: callback.code,
+        state: callback.state,
+        grant_type: 'authorization_code',
+        client_id: CLIENT_ID,
+        redirect_uri: redirectUri,
+        code_verifier: verifier,
+      }),
+    })
+  } catch (error) {
+    if (isTransientNetworkError(error)) return { type: 'failed' }
+    throw error
+  }
 
   if (!result.ok) {
+    await result.body?.cancel().catch(() => {})
     return {
       type: 'failed',
     }
@@ -163,6 +280,16 @@ export async function exchange(
   redirectUri: string,
   expectedState?: string,
 ): Promise<ExchangeResult> {
+  if (
+    !isBoundedUtf8(input, MAX_CALLBACK_INPUT_BYTES) ||
+    !isBoundedUtf8(verifier, MAX_VERIFIER_BYTES) ||
+    !isBoundedUtf8(redirectUri, MAX_REDIRECT_URI_BYTES) ||
+    (expectedState !== undefined &&
+      !isBoundedUtf8(expectedState, MAX_TOKEN_LENGTH))
+  ) {
+    return { type: 'failed' }
+  }
+
   const callback = parseCallbackInput(input)
   if (!callback) {
     return {
@@ -176,6 +303,13 @@ export async function exchange(
     }
   }
 
+  if (
+    !isBoundedUtf8(callback.code, MAX_TOKEN_LENGTH) ||
+    !isBoundedUtf8(callback.state, MAX_TOKEN_LENGTH)
+  ) {
+    return { type: 'failed' }
+  }
+
   return exchangeCode(callback, verifier, redirectUri)
 }
 
@@ -185,80 +319,48 @@ export type RefreshResult =
 
 /**
  * Exchange a refresh token for a new access/refresh token pair.
- * Retries transient (5xx, network) failures with exponential backoff;
- * non-transient failures (e.g. 403 on a revoked/rotated-away token)
- * are returned immediately as `{ type: 'failed' }`.
+ * Refresh tokens may rotate after a request reaches the provider. Retrying an
+ * ambiguous 5xx, timeout, network failure, or response-body failure can replay
+ * an already consumed token, so each call makes exactly one token request.
  */
 export async function refreshToken(
   refreshTokenValue: string,
 ): Promise<RefreshResult> {
-  const maxRetries = 2
-  const baseDelayMs = 500
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      if (attempt > 0) {
-        const delay = baseDelayMs * 2 ** (attempt - 1)
-        await new Promise((resolve) => setTimeout(resolve, delay))
-      }
-
-      const response = await fetch(TOKEN_URL, {
-        method: 'POST',
-        signal: AbortSignal.timeout(REFRESH_TIMEOUT_MS),
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json, text/plain, */*',
-          'User-Agent': 'axios/1.13.6',
-        },
-        body: JSON.stringify({
-          grant_type: 'refresh_token',
-          refresh_token: refreshTokenValue,
-          client_id: CLIENT_ID,
-        }),
-      })
-
-      if (!response.ok) {
-        if (response.status >= 500 && attempt < maxRetries) {
-          await response.body?.cancel()
-          continue
-        }
-
-        await response.body?.cancel()
-        return { type: 'failed', status: response.status }
-      }
-
-      const tokens = await parseTokenResponse(response)
-      if (!tokens) {
-        return { type: 'failed', status: response.status }
-      }
-
-      return {
-        type: 'success',
-        ...tokens,
-      }
-    } catch (error) {
-      const isNetworkError =
-        (typeof error === 'object' &&
-          error !== null &&
-          'name' in error &&
-          (error.name === 'TimeoutError' || error.name === 'AbortError')) ||
-        (error instanceof Error &&
-          (error.message.includes('fetch failed') ||
-            ('code' in error &&
-              (error.code === 'ECONNRESET' ||
-                error.code === 'ECONNREFUSED' ||
-                error.code === 'ETIMEDOUT' ||
-                error.code === 'UND_ERR_CONNECT_TIMEOUT'))))
-
-      if (attempt < maxRetries && isNetworkError) {
-        continue
-      }
-
-      throw error
-    }
+  if (!isBoundedUtf8(refreshTokenValue, MAX_TOKEN_LENGTH)) {
+    return { type: 'failed', status: 400 }
   }
 
-  // Unreachable — each iteration either returns or throws.
-  // Kept as a TypeScript exhaustiveness guard.
-  throw new Error('Token refresh exhausted all retries')
+  try {
+    const response = await fetch(TOKEN_URL, {
+      method: 'POST',
+      signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
+      redirect: 'error',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/plain, */*',
+        'User-Agent': 'axios/1.13.6',
+      },
+      body: JSON.stringify({
+        grant_type: 'refresh_token',
+        refresh_token: refreshTokenValue,
+        client_id: CLIENT_ID,
+      }),
+    })
+
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {})
+      return { type: 'failed', status: response.status }
+    }
+
+    const tokens = await parseTokenResponse(response)
+    if (!tokens) return { type: 'failed', status: response.status }
+
+    return {
+      type: 'success',
+      ...tokens,
+    }
+  } catch (error) {
+    if (isTransientNetworkError(error)) return { type: 'failed', status: 0 }
+    throw error
+  }
 }

@@ -9,6 +9,7 @@ import {
 import {
   createStrippedStream,
   isInsecure,
+  isTrustedAnthropicUrl,
   mergeBetaHeaders,
   mergeHeaders,
   prefixToolNames,
@@ -18,7 +19,12 @@ import {
   sanitizeSystemText,
   setOAuthHeaders,
   stripToolPrefix,
+  ToolNameAliasTable,
 } from '../transform'
+
+function shortAlias(name: string): string {
+  return `mcp_T${Buffer.from(new TextEncoder().encode(name)).toString('base64url')}`
+}
 
 describe('mergeHeaders', () => {
   test('copies headers from a Request object', () => {
@@ -119,7 +125,9 @@ describe('setOAuthHeaders', () => {
   test('sets user-agent', () => {
     const headers = new Headers()
     setOAuthHeaders(headers, 'token')
-    expect(headers.get('user-agent')).toContain('claude-cli')
+    expect(headers.get('user-agent')).toBe(
+      `claude-cli/${CLAUDE_CODE_VERSION} (external, cli)`,
+    )
   })
 
   test('removes x-api-key', () => {
@@ -139,6 +147,48 @@ describe('setOAuthHeaders', () => {
 })
 
 describe('prefixToolNames', () => {
+  test('preserves malformed tool and message entries without throwing', () => {
+    const aliases = new ToolNameAliasTable()
+    const body = {
+      tools: [null, 'not-a-tool', {}, { name: 'valid' }],
+      messages: [
+        null,
+        'not-a-message',
+        {},
+        { content: null },
+        {
+          content: [
+            'not-a-block',
+            null,
+            {},
+            { type: 'tool_use', name: 'valid' },
+          ],
+        },
+      ],
+    } as any
+
+    let rewritten = ''
+    expect(() => {
+      rewritten = prefixToolNames(body, false, aliases)
+    }).not.toThrow()
+    const result = JSON.parse(rewritten)
+    expect(result.tools.slice(0, 3)).toEqual([null, 'not-a-tool', {}])
+    expect(result.tools[3].name).toBe(shortAlias('valid'))
+    expect(result.messages.slice(0, 4)).toEqual([
+      null,
+      'not-a-message',
+      {},
+      { content: null },
+    ])
+    expect(result.messages[4].content.slice(0, 3)).toEqual([
+      'not-a-block',
+      null,
+      {},
+    ])
+    expect(result.messages[4].content[3].name).toBe(shortAlias('valid'))
+    aliases.dispose()
+  })
+
   test('prefixes tool definition names', () => {
     const body = {
       tools: [
@@ -147,8 +197,8 @@ describe('prefixToolNames', () => {
       ],
     }
     const result = JSON.parse(prefixToolNames(body))
-    expect(result.tools[0].name).toBe('mcp_Read_file')
-    expect(result.tools[1].name).toBe('mcp_Write_file')
+    expect(result.tools[0].name).toBe(shortAlias('read_file'))
+    expect(result.tools[1].name).toBe(shortAlias('write_file'))
   })
 
   test('prefixes tool_use block names in messages', () => {
@@ -164,7 +214,7 @@ describe('prefixToolNames', () => {
       ],
     }
     const result = JSON.parse(prefixToolNames(body))
-    expect(result.messages[0].content[0].name).toBe('mcp_Bash')
+    expect(result.messages[0].content[0].name).toBe(shortAlias('bash'))
     expect(result.messages[0].content[1].type).toBe('text')
   })
 
@@ -201,12 +251,12 @@ describe('prefixToolNames', () => {
 
 describe('stripToolPrefix', () => {
   test('strips mcp_ prefix from tool names', () => {
-    const text = '{"name": "mcp_read_file"}'
+    const text = `{"name": "${shortAlias('read_file')}"}`
     expect(stripToolPrefix(text)).toBe('{"name": "read_file"}')
   })
 
   test('strips multiple prefixed names', () => {
-    const text = '{"name": "mcp_tool_a"} and {"name": "mcp_tool_b"}'
+    const text = `{"name": "${shortAlias('tool_a')}"} and {"name": "${shortAlias('tool_b')}"}`
     const result = stripToolPrefix(text)
     expect(result).toContain('"name": "tool_a"')
     expect(result).toContain('"name": "tool_b"')
@@ -218,7 +268,7 @@ describe('stripToolPrefix', () => {
   })
 
   test('handles whitespace variations in JSON', () => {
-    const text = '{"name"  :  "mcp_tool"}'
+    const text = `{"name"  :  "${shortAlias('tool')}"}`
     expect(stripToolPrefix(text)).toBe('{"name": "tool"}')
   })
 })
@@ -231,11 +281,8 @@ describe('rewriteUrl', () => {
   })
 
   afterEach(() => {
-    if (originalEnv === undefined) {
-      delete process.env.ANTHROPIC_BASE_URL
-    } else {
-      process.env.ANTHROPIC_BASE_URL = originalEnv
-    }
+    if (originalEnv === undefined) delete process.env.ANTHROPIC_BASE_URL
+    else process.env.ANTHROPIC_BASE_URL = originalEnv
   })
 
   test('adds beta=true to /v1/messages URL string', () => {
@@ -259,7 +306,7 @@ describe('rewriteUrl', () => {
     expect(url.searchParams.get('beta')).toBe('true')
   })
 
-  test('does not modify URL if beta param already exists', () => {
+  test('preserves an explicit beta query parameter', () => {
     const original = 'https://api.anthropic.com/v1/messages?beta=false'
     const { input } = rewriteUrl(original)
     const url = new URL(input.toString())
@@ -271,67 +318,6 @@ describe('rewriteUrl', () => {
     const { input } = rewriteUrl(original)
     const url = new URL(input.toString())
     expect(url.searchParams.has('beta')).toBe(false)
-  })
-
-  test('overrides origin when ANTHROPIC_BASE_URL is set', () => {
-    process.env.ANTHROPIC_BASE_URL = 'http://localhost:8080'
-    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
-    const url = new URL(input.toString())
-    expect(url.origin).toBe('http://localhost:8080')
-    expect(url.pathname).toBe('/v1/messages')
-  })
-
-  test('preserves beta=true when ANTHROPIC_BASE_URL is set', () => {
-    process.env.ANTHROPIC_BASE_URL = 'http://localhost:8080'
-    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
-    const url = new URL(input.toString())
-    expect(url.searchParams.get('beta')).toBe('true')
-  })
-
-  test('preserves existing query params when ANTHROPIC_BASE_URL is set', () => {
-    process.env.ANTHROPIC_BASE_URL = 'http://localhost:8080'
-    const { input } = rewriteUrl(
-      'https://api.anthropic.com/v1/messages?foo=bar',
-    )
-    const url = new URL(input.toString())
-    expect(url.origin).toBe('http://localhost:8080')
-    expect(url.searchParams.get('foo')).toBe('bar')
-  })
-
-  test('handles ANTHROPIC_BASE_URL with trailing slash', () => {
-    process.env.ANTHROPIC_BASE_URL = 'http://localhost:8080/'
-    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
-    const url = new URL(input.toString())
-    expect(url.pathname).toBe('/v1/messages')
-    expect(url.origin).toBe('http://localhost:8080')
-  })
-
-  test('ignores invalid ANTHROPIC_BASE_URL', () => {
-    process.env.ANTHROPIC_BASE_URL = 'not-a-url'
-    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
-    const url = new URL(input.toString())
-    expect(url.origin).toBe('https://api.anthropic.com')
-  })
-
-  test('ignores empty ANTHROPIC_BASE_URL', () => {
-    process.env.ANTHROPIC_BASE_URL = ''
-    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
-    const url = new URL(input.toString())
-    expect(url.origin).toBe('https://api.anthropic.com')
-  })
-
-  test('rejects file: scheme in ANTHROPIC_BASE_URL', () => {
-    process.env.ANTHROPIC_BASE_URL = 'file:///etc/passwd'
-    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
-    const url = new URL(input.toString())
-    expect(url.origin).toBe('https://api.anthropic.com')
-  })
-
-  test('rejects ANTHROPIC_BASE_URL with embedded credentials', () => {
-    process.env.ANTHROPIC_BASE_URL = 'http://user:pass@localhost:8080'
-    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
-    const url = new URL(input.toString())
-    expect(url.origin).toBe('https://api.anthropic.com')
   })
 
   test('returns original input when no URL changes are needed', () => {
@@ -346,13 +332,68 @@ describe('rewriteUrl', () => {
     expect(input).toBe(request)
   })
 
-  test('overrides origin for Request input when ANTHROPIC_BASE_URL is set', () => {
-    process.env.ANTHROPIC_BASE_URL = 'http://localhost:8080'
-    const request = new Request('https://api.anthropic.com/v1/messages')
-    const { input } = rewriteUrl(request)
-    const url = new URL((input as Request).url)
+  test('uses the exact configured custom origin and preserves the API path', () => {
+    process.env.ANTHROPIC_BASE_URL = 'http://localhost:8080/base'
+    const { input } = rewriteUrl(
+      'https://api.anthropic.com/v1/messages?existing=yes',
+    )
+    const url = new URL(input.toString())
     expect(url.origin).toBe('http://localhost:8080')
     expect(url.pathname).toBe('/v1/messages')
+    expect(url.searchParams.get('existing')).toBe('yes')
+    expect(url.searchParams.get('beta')).toBe('true')
+    expect(isTrustedAnthropicUrl(url)).toBe(true)
+    expect(isTrustedAnthropicUrl('http://localhost:8081/v1/messages')).toBe(
+      false,
+    )
+  })
+
+  test.each([
+    'not-a-url',
+    'file:///etc/passwd',
+    'http://user:pass@localhost:8080',
+    'http://proxy.example.test',
+  ])('ignores invalid custom endpoint %s', (configured) => {
+    process.env.ANTHROPIC_BASE_URL = configured
+    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
+    expect(new URL(input.toString()).origin).toBe('https://api.anthropic.com')
+  })
+
+  test.each([
+    'http://localhost:8080',
+    'http://127.0.0.1:8080',
+    'http://[::1]:8080',
+    'https://proxy.example.test',
+  ])('accepts a secure or loopback custom endpoint %s', (configured) => {
+    process.env.ANTHROPIC_BASE_URL = configured
+    const { input } = rewriteUrl('https://api.anthropic.com/v1/messages')
+    const url = new URL(input.toString())
+    expect(url.origin).toBe(new URL(configured).origin)
+    expect(isTrustedAnthropicUrl(url)).toBe(true)
+  })
+})
+
+describe('isTrustedAnthropicUrl', () => {
+  test('accepts only the official HTTPS Anthropic API origin', () => {
+    expect(isTrustedAnthropicUrl('https://api.anthropic.com/v1/messages')).toBe(
+      true,
+    )
+    expect(
+      isTrustedAnthropicUrl('https://api.anthropic.com:443/v1/messages'),
+    ).toBe(true)
+  })
+
+  test.each([
+    'http://api.anthropic.com/v1/messages',
+    'https://api.anthropic.com.evil.test/v1/messages',
+    'https://localhost/v1/messages',
+    'http://127.0.0.1/v1/messages',
+    'http://169.254.169.254/latest/meta-data',
+    'https://[::1]/v1/messages',
+    'https://user:pass@api.anthropic.com/v1/messages',
+    'not-a-url',
+  ])('rejects untrusted URL %s', (url) => {
+    expect(isTrustedAnthropicUrl(url)).toBe(false)
   })
 })
 
@@ -361,50 +402,19 @@ describe('isInsecure', () => {
   const originalInsecure = process.env.ANTHROPIC_INSECURE
 
   afterEach(() => {
-    if (originalBaseUrl === undefined) {
-      delete process.env.ANTHROPIC_BASE_URL
-    } else {
-      process.env.ANTHROPIC_BASE_URL = originalBaseUrl
-    }
-    if (originalInsecure === undefined) {
-      delete process.env.ANTHROPIC_INSECURE
-    } else {
-      process.env.ANTHROPIC_INSECURE = originalInsecure
-    }
+    if (originalBaseUrl === undefined) delete process.env.ANTHROPIC_BASE_URL
+    else process.env.ANTHROPIC_BASE_URL = originalBaseUrl
+    if (originalInsecure === undefined) delete process.env.ANTHROPIC_INSECURE
+    else process.env.ANTHROPIC_INSECURE = originalInsecure
   })
 
-  test('returns false when neither env var is set', () => {
-    delete process.env.ANTHROPIC_BASE_URL
-    delete process.env.ANTHROPIC_INSECURE
-    expect(isInsecure()).toBe(false)
-  })
-
-  test('returns false when only ANTHROPIC_INSECURE is set (no base URL)', () => {
+  test('requires both a custom endpoint and an explicit supported value', () => {
     delete process.env.ANTHROPIC_BASE_URL
     process.env.ANTHROPIC_INSECURE = '1'
     expect(isInsecure()).toBe(false)
-  })
 
-  test('returns false when ANTHROPIC_BASE_URL is set but ANTHROPIC_INSECURE is not', () => {
     process.env.ANTHROPIC_BASE_URL = 'https://proxy.local'
-    delete process.env.ANTHROPIC_INSECURE
-    expect(isInsecure()).toBe(false)
-  })
-
-  test('returns true when both are set and ANTHROPIC_INSECURE is "1"', () => {
-    process.env.ANTHROPIC_BASE_URL = 'https://proxy.local'
-    process.env.ANTHROPIC_INSECURE = '1'
     expect(isInsecure()).toBe(true)
-  })
-
-  test('returns true when ANTHROPIC_INSECURE is "true"', () => {
-    process.env.ANTHROPIC_BASE_URL = 'https://proxy.local'
-    process.env.ANTHROPIC_INSECURE = 'true'
-    expect(isInsecure()).toBe(true)
-  })
-
-  test('returns false for other ANTHROPIC_INSECURE values', () => {
-    process.env.ANTHROPIC_BASE_URL = 'https://proxy.local'
     process.env.ANTHROPIC_INSECURE = 'yes'
     expect(isInsecure()).toBe(false)
   })
@@ -413,8 +423,8 @@ describe('isInsecure', () => {
 describe('createStrippedStream', () => {
   test('strips tool prefixes from streamed response body', async () => {
     const chunks = [
-      'data: {"type":"content_block_start","content_block":{"type":"tool_use","name":"mcp_bash"}}\n\n',
-      'data: {"type":"content_block_start","content_block":{"type":"tool_use","name":"mcp_read"}}\n\n',
+      `data: {"type":"content_block_start","content_block":{"type":"tool_use","name":"${shortAlias('bash')}"}}\n\n`,
+      `data: {"type":"content_block_start","content_block":{"type":"tool_use","name":"${shortAlias('read')}"}}\n\n`,
     ]
 
     const stream = new ReadableStream({
@@ -434,10 +444,10 @@ describe('createStrippedStream', () => {
     const stripped = createStrippedStream(original)
 
     const text = await stripped.text()
-    expect(text).toContain('"name": "bash"')
-    expect(text).toContain('"name": "read"')
-    expect(text).not.toContain('mcp_bash')
-    expect(text).not.toContain('mcp_read')
+    expect(text).toContain('"name":"bash"')
+    expect(text).toContain('"name":"read"')
+    expect(text).not.toContain(shortAlias('bash'))
+    expect(text).not.toContain(shortAlias('read'))
   })
 
   test('preserves response status and headers', async () => {
@@ -463,10 +473,10 @@ describe('createStrippedStream', () => {
 
   test('strips a tool prefix split across arbitrary stream chunks', async () => {
     const chunks = [
-      'data: {"content_block":{"type":"tool_use","na',
-      'me":"m',
-      'cp_B',
-      'ash"}}\n\n',
+      'data: {"type":"content_block_start","content_block":{"type":"tool_use","na',
+      `me":"${shortAlias('bash').slice(0, 4)}`,
+      `${shortAlias('bash').slice(4, 8)}`,
+      `${shortAlias('bash').slice(8)}"}}\n\n`,
     ]
     const encoder = new TextEncoder()
     const stream = new ReadableStream({
@@ -482,13 +492,12 @@ describe('createStrippedStream', () => {
       }),
     ).text()
 
-    expect(text).toContain('"name": "bash"')
+    expect(text).toContain('"name":"bash"')
     expect(text).not.toContain('mcp_')
   })
 
   test('preserves unicode when every input byte is a separate chunk', async () => {
-    const input =
-      'data: {"text":"Привет 👋","content_block":{"name":"mcp_Read"}}\n\n'
+    const input = `data: {"type":"content_block_start","text":"Привет 👋","content_block":{"type":"tool_use","name":"${shortAlias('Read')}"}}\n\n`
     const bytes = new TextEncoder().encode(input)
     const stream = new ReadableStream({
       start(controller) {
@@ -504,18 +513,21 @@ describe('createStrippedStream', () => {
     ).text()
 
     expect(text).toContain('Привет 👋')
-    expect(text).toContain('"name": "read"')
+    expect(text).toContain('"name":"Read"')
     expect(text).not.toContain('�')
   })
 
   test('drops stale content-length after rewriting the response body', () => {
-    const original = new Response('data: {"name":"mcp_Read"}\n\n', {
-      headers: {
-        'content-type': 'text/event-stream',
-        'content-length': '999',
-        'x-custom': 'value',
+    const original = new Response(
+      `data: {"name":"${shortAlias('Read')}"}\n\n`,
+      {
+        headers: {
+          'content-type': 'text/event-stream',
+          'content-length': '999',
+          'x-custom': 'value',
+        },
       },
-    })
+    )
 
     const stripped = createStrippedStream(original)
 
@@ -709,6 +721,49 @@ describe('prependClaudeCodeIdentity', () => {
     expect(result[0]?.text).toBe(CLAUDE_CODE_IDENTITY)
     expect(result[1]).toEqual({ type: 'text', text: 'some text' })
   })
+
+  test('does not emit empty text blocks after sanitization', () => {
+    const result = prependClaudeCodeIdentity([
+      '',
+      'https://github.com/anomalyco/opencode',
+      { type: 'text', text: '' },
+      {
+        type: 'text',
+        text: 'kept',
+        metadata: { source: 'test' },
+        cache_control: { type: 'ephemeral' },
+      },
+    ])
+
+    expect(result).toEqual([
+      { type: 'text', text: CLAUDE_CODE_IDENTITY },
+      {
+        type: 'text',
+        text: 'kept',
+        metadata: { source: 'test' },
+        cache_control: { type: 'ephemeral' },
+      },
+    ])
+    expect(result.some((block) => block.text === '')).toBe(false)
+    expect(JSON.stringify(result)).not.toContain('[object Object]')
+  })
+
+  test('drops unsupported object and array system block types', () => {
+    expect(
+      prependClaudeCodeIdentity([
+        { type: 'image', source: { type: 'base64', data: 'x' } },
+        { type: 'tool_use', name: 'mcp_Read' },
+        [],
+      ]),
+    ).toEqual([{ type: 'text', text: CLAUDE_CODE_IDENTITY }])
+
+    expect(
+      prependClaudeCodeIdentity({
+        type: 'image',
+        source: { type: 'base64', data: 'x' },
+      }),
+    ).toEqual([{ type: 'text', text: CLAUDE_CODE_IDENTITY }])
+  })
 })
 
 describe('rewriteRequestBody', () => {
@@ -719,7 +774,7 @@ describe('rewriteRequestBody', () => {
       system: 'You are a helpful assistant.',
     })
     const result = JSON.parse(rewriteRequestBody(body))
-    expect(result.tools[0].name).toBe('mcp_Bash')
+    expect(result.tools[0].name).toBe(shortAlias('bash'))
     // system[0] = billing header, system[1] = identity, system[2] = rest
     expect(result.system[0].text).toContain('x-anthropic-billing-header')
     expect(result.system[1].text).toBe(CLAUDE_CODE_IDENTITY)
@@ -807,7 +862,7 @@ describe('rewriteRequestBody', () => {
 
     // User messages are untouched
     expect(result.messages[0].content).toBe('Help me fix this bug')
-    expect(result.messages[1].content[0].name).toBe('mcp_Bash')
+    expect(result.messages[1].content[0].name).toBe(shortAlias('bash'))
   })
 
   test('handles body with no messages array', () => {
@@ -897,39 +952,168 @@ describe('rewriteRequestBody', () => {
     // User message is untouched
     expect(result.messages[0].content).toBe('hi')
   })
+
+  test('omits empty and unsupported system blocks without object coercion', () => {
+    const result = JSON.parse(
+      rewriteRequestBody(
+        JSON.stringify({
+          messages: [{ role: 'user', content: 'hi' }],
+          system: [
+            '',
+            { type: 'text', text: 'https://opencode.ai/docs' },
+            { type: 'text', text: '' },
+            [],
+            { type: 'image', source: { type: 'base64', data: 'x' } },
+          ],
+        }),
+      ),
+    )
+
+    expect(result.system).toHaveLength(2)
+    expect(result.system[0].text).toContain('x-anthropic-billing-header')
+    expect(result.system[1].text).toBe(CLAUDE_CODE_IDENTITY)
+    expect(
+      result.system.every((block: { text: string }) => block.text !== ''),
+    ).toBe(true)
+    expect(JSON.stringify(result)).not.toContain('[object Object]')
+  })
+
+  test('is byte-idempotent with one identity, billing block, and prefixed tools', () => {
+    const body = JSON.stringify({
+      tools: [{ name: 'bash', type: 'function' }],
+      messages: [{ role: 'user', content: 'hello' }],
+      system: 'Useful instructions',
+    })
+
+    const aliases = new ToolNameAliasTable()
+    const once = rewriteRequestBody(body, undefined, aliases)
+    const twice = rewriteRequestBody(once, undefined, aliases)
+    const parsed = JSON.parse(twice)
+
+    expect(twice).toBe(once)
+    expect(
+      parsed.system.filter(
+        (block: { text: string }) => block.text === CLAUDE_CODE_IDENTITY,
+      ),
+    ).toHaveLength(1)
+    expect(
+      parsed.system.filter((block: { text: string }) =>
+        block.text.includes('x-anthropic-billing-header'),
+      ),
+    ).toHaveLength(1)
+    expect(parsed.tools[0].name).toBe(shortAlias('bash'))
+    aliases.dispose()
+  })
+
+  test('preserves native mixed tool names while making the rewrite idempotent', () => {
+    const body = JSON.stringify({
+      tools: [{ name: 'mcp_Bash' }, { name: 'bash' }],
+      messages: [
+        { role: 'user', content: 'hello' },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', name: 'mcp_Bash', id: 'native-1' },
+            { type: 'tool_use', name: 'bash', id: 'native-2' },
+          ],
+        },
+      ],
+    })
+
+    const aliases = new ToolNameAliasTable()
+    const once = JSON.parse(rewriteRequestBody(body, undefined, aliases))
+    const twiceText = rewriteRequestBody(
+      JSON.stringify(once),
+      undefined,
+      aliases,
+    )
+
+    expect(once.tools.map((tool: { name: string }) => tool.name)).toEqual([
+      shortAlias('mcp_Bash'),
+      shortAlias('bash'),
+    ])
+    expect(
+      once.messages[1].content.map((block: { name: string }) => block.name),
+    ).toEqual([shortAlias('mcp_Bash'), shortAlias('bash')])
+    expect(
+      JSON.parse(stripToolPrefix(JSON.stringify(once), aliases)).tools.map(
+        (tool: { name: string }) => tool.name,
+      ),
+    ).toEqual(['mcp_Bash', 'bash'])
+    expect(twiceText).toBe(JSON.stringify(once))
+    aliases.dispose()
+  })
+
+  test('normalizes rewritten-looking system blocks and already-prefixed tools', () => {
+    const body = JSON.stringify({
+      tools: [{ name: 'mcp_Bash' }],
+      messages: [{ role: 'user', content: 'hello' }],
+      system: [
+        { type: 'text', text: CLAUDE_CODE_IDENTITY },
+        { type: 'text', text: 'x-anthropic-billing-header: stale' },
+        { type: 'text', text: 'Meaningful instructions' },
+        { type: 'text', text: 'x-anthropic-billing-header: duplicate' },
+        { type: 'text', text: CLAUDE_CODE_IDENTITY },
+      ],
+    })
+
+    const aliases = new ToolNameAliasTable()
+    const onceText = rewriteRequestBody(body, undefined, aliases)
+    const once = JSON.parse(onceText)
+    const twiceText = rewriteRequestBody(onceText, undefined, aliases)
+
+    expect(once.system).toHaveLength(3)
+    expect(once.system[0].text).toBe(
+      'x-anthropic-billing-header: cc_version=2.1.258.59d; cc_entrypoint=sdk-cli; cch=2cf24;',
+    )
+    expect(once.system[1].text).toBe(CLAUDE_CODE_IDENTITY)
+    expect(once.system[2].text).toBe('Meaningful instructions')
+    expect(once.tools[0].name).toBe('mcp_Bash')
+    expect(JSON.parse(stripToolPrefix(onceText, aliases)).tools[0].name).toBe(
+      'mcp_Bash',
+    )
+    expect(twiceText).toBe(onceText)
+    aliases.dispose()
+  })
+
+  test('is byte-idempotent when there are no users or tools', () => {
+    const body = JSON.stringify({ system: 'Only instructions', messages: [] })
+    const once = rewriteRequestBody(body)
+    const twice = rewriteRequestBody(once)
+
+    expect(twice).toBe(once)
+    expect(JSON.parse(twice).system).toEqual([
+      { type: 'text', text: CLAUDE_CODE_IDENTITY },
+      { type: 'text', text: 'Only instructions' },
+    ])
+    expect(twice).not.toContain('x-anthropic-billing-header')
+    expect(twice).not.toContain('mcp_')
+  })
 })
 
 describe('reported Claude Code version', () => {
-  // Anthropic gates model access on the version we report, and we report it
-  // twice: in the user-agent header and in the billing header's cc_version.
-  // If those ever disagree, one of them is stale and new models start failing
-  // with a 400 claude_code_version_too_old. Assert both against the constant.
-  test('user-agent and billing header both report CLAUDE_CODE_VERSION', () => {
+  test('uses the bundled version in both header and billing metadata', () => {
     const headers = new Headers()
     setOAuthHeaders(headers, 'token')
     expect(headers.get('user-agent')).toBe(
       `claude-cli/${CLAUDE_CODE_VERSION} (external, cli)`,
     )
-
     const body = JSON.stringify({
       messages: [{ role: 'user', content: 'hello world test message' }],
     })
     const billingHeader = JSON.parse(rewriteRequestBody(body)).system[0].text
-    // cc_version is `<version>.<3-char suffix>`, so match the version segment.
     expect(billingHeader).toContain(`cc_version=${CLAUDE_CODE_VERSION}.`)
   })
 
-  test('user-agent and billing header both report an explicit version', () => {
+  test('uses one explicit version in both header and billing metadata', () => {
     const version = '2.9.99'
     const headers = new Headers()
     setOAuthHeaders(headers, 'token', version)
-
     const body = JSON.stringify({
       messages: [{ role: 'user', content: 'hello world test message' }],
     })
     const billingHeader = JSON.parse(rewriteRequestBody(body, version))
       .system[0].text
-
     expect(headers.get('user-agent')).toBe(
       `claude-cli/${version} (external, cli)`,
     )

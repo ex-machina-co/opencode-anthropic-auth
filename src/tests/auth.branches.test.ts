@@ -44,7 +44,13 @@ describe('exchange - callback parsing', () => {
 
 describe('exchange - token endpoint failures', () => {
   test('returns failed when the token endpoint rejects the code', async () => {
-    const calls = stubFetch(new Response('invalid_grant', { status: 400 }))
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true
+      },
+    })
+    const calls = stubFetch(new Response(body, { status: 400 }))
 
     const result = await exchange(
       'abc#xyz',
@@ -55,6 +61,7 @@ describe('exchange - token endpoint failures', () => {
 
     expect(result.type).toBe('failed')
     expect(calls).toHaveLength(1)
+    expect(cancelled).toBe(true)
   })
 
   test('returns failed on a 500 from the token endpoint', async () => {

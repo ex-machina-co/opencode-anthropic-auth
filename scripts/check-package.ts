@@ -55,16 +55,17 @@ try {
     ),
   )
   const packResult: unknown = JSON.parse(output)
+  const packEntries = Array.isArray(packResult)
+    ? packResult
+    : isRecord(packResult)
+      ? Object.values(packResult)
+      : []
 
-  if (
-    !Array.isArray(packResult) ||
-    packResult.length !== 1 ||
-    !isRecord(packResult[0])
-  ) {
+  if (packEntries.length !== 1 || !isRecord(packEntries[0])) {
     fail('npm pack returned an unexpected result.')
   }
 
-  const [{ filename, files }] = packResult
+  const [{ filename, files }] = packEntries
   if (typeof filename !== 'string' || !Array.isArray(files)) {
     fail('npm pack did not report a tarball and file list.')
   }

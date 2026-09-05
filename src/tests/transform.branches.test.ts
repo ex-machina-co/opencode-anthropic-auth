@@ -31,18 +31,17 @@ describe('prependClaudeCodeIdentity - non-array system values', () => {
     expect(blocks[1]).toMatchObject({ cache_control: { type: 'ephemeral' } })
   })
 
-  test('defaults the type when a block object omits it', () => {
+  test('drops a block object without an explicit text type', () => {
     const blocks = prependClaudeCodeIdentity({ text: 'no type here' } as never)
-    expect(blocks[1]).toMatchObject({ type: 'text', text: 'no type here' })
+    expect(blocks).toHaveLength(1)
   })
 
-  test('stringifies array items that are neither strings nor text blocks', () => {
+  test('drops array items that are neither strings nor text blocks', () => {
     const blocks = prependClaudeCodeIdentity([
       42,
       { type: 'image', source: {} },
     ])
-    expect(blocks[1]).toEqual({ type: 'text', text: '42' })
-    expect(blocks[2]).toMatchObject({ type: 'text' })
+    expect(blocks).toHaveLength(1)
   })
 
   test('falls back to the identity block for unsupported system values', () => {

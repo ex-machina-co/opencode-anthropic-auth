@@ -294,15 +294,15 @@ Run \`bun run build\` to compile."
   ],
   "tools": [
     {
-      "name": "mcp_Bash",
+      "name": "mcp_TYmFzaA",
       "type": "function",
     },
     {
-      "name": "mcp_Read",
+      "name": "mcp_TcmVhZA",
       "type": "function",
     },
     {
-      "name": "mcp_Edit",
+      "name": "mcp_TZWRpdA",
       "type": "function",
     },
   ],
