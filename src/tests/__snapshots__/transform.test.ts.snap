@@ -146,7 +146,7 @@ exports[`sanitizeSystemText – realistic prompt rewriteRequestBody output snaps
   ],
   "system": [
     {
-      "text": "x-anthropic-billing-header: cc_version=2.1.275.1e2; cc_entrypoint=sdk-cli; cch=185f8;",
+      "text": "x-anthropic-billing-header: cc_version=2.1.280.790; cc_entrypoint=sdk-cli; cch=185f8;",
       "type": "text",
     },
     {
