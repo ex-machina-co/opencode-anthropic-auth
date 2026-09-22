@@ -14,7 +14,7 @@ export const ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR =
 /**
  * Claude Code releases are `major.minor.patch` with numeric components.
  *
- * Leading zeros are rejected: `02.1.275` is not a release Anthropic publishes,
+ * Leading zeros are rejected: `02.1.280` is not a release Anthropic publishes,
  * so accepting it would report a version string no server-side gate expects.
  */
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
@@ -24,7 +24,7 @@ const MAX_VERSION_LENGTH = 64
  * Is `candidate` an older Claude Code release than `baseline`?
  *
  * Both arguments must already match `VERSION_PATTERN`. Components are compared
- * numerically rather than lexically — `2.1.99` sorts after `2.1.275` as a
+ * numerically rather than lexically — `2.1.99` sorts after `2.1.280` as a
  * string but is the older release — and as `BigInt`, so an unbounded component
  * cannot silently lose precision the way `Number` would.
  */
