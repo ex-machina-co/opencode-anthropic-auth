@@ -47,9 +47,9 @@ describe('resolveClaudeCodeVersion', () => {
   test.each([
     ['lower major', '1.9.999'],
     ['lower minor', '2.0.999'],
-    ['lower patch', '2.1.257'],
+    ['lower patch', '2.1.279'],
     ['lower patch that sorts higher lexically', '2.1.99'],
-    ['lower version padded with leading zeros', '02.1.257'],
+    ['lower version padded with leading zeros', '02.1.279'],
   ])('flags an outdated override (%s)', (_label, raw) => {
     const result = resolveClaudeCodeVersion(raw)
     expect(result.type).toBe('outdated')
@@ -64,7 +64,7 @@ describe('resolveClaudeCodeVersion', () => {
 
   test.each([
     ['equal to the bundled version', CLAUDE_CODE_VERSION],
-    ['higher patch', '2.1.259'],
+    ['higher patch', '2.1.281'],
     ['higher minor', '2.2.0'],
     ['higher major that sorts lower lexically', '10.0.0'],
     ['component beyond Number.MAX_SAFE_INTEGER', '9007199254740993.0.0'],

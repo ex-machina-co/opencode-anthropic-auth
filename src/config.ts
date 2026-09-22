@@ -18,7 +18,7 @@ const VERSION_PATTERN = /^\d+\.\d+\.\d+$/
  * Is `candidate` an older Claude Code release than `baseline`?
  *
  * Both arguments must already match `VERSION_PATTERN`. Components are compared
- * numerically rather than lexically — `2.1.99` sorts after `2.1.258` as a
+ * numerically rather than lexically — `2.1.99` sorts after `2.1.280` as a
  * string but is the older release — and as `BigInt`, so an unbounded component
  * cannot silently lose precision the way `Number` would.
  */
