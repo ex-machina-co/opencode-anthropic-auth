@@ -1,5 +1,11 @@
 # @ex-machina/opencode-anthropic-auth
 
+## 1.8.5
+
+### Patch Changes
+
+- [#266](https://github.com/ex-machina-co/opencode-anthropic-auth/pull/266) [`55d9a78`](https://github.com/ex-machina-co/opencode-anthropic-auth/commit/55d9a789a32b247c6aec509a3bad8e086b158651) Thanks [@jdormit](https://github.com/jdormit)! - Bump reported Claude Code version to 2.1.280
+
 ## 1.8.4
 
 ### Patch Changes
