@@ -5,9 +5,14 @@ import { BodyLimitError, contentLength, readBoundedText } from './bounded.ts'
 import {
   ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR,
   compareClaudeCodeVersions,
+  isValidClaudeCodeVersion,
   resolveClaudeCodeVersion,
 } from './config.ts'
-import { CLAUDE_CODE_VERSION, REQUIRED_BETAS } from './constants.ts'
+import {
+  CLAUDE_CODE_VERSION,
+  formatUserAgent,
+  REQUIRED_BETAS,
+} from './constants.ts'
 import {
   createConnectionLabel,
   describeConnection,
@@ -261,6 +266,20 @@ function versionGateRecoveryKey(
   modelID: string,
 ): string {
   return `${sessionID}\u0000${agent}\u0000${providerID}\u0000${modelID}`
+}
+
+/** Read the exact Claude Code version carried by a plugin-owned request. */
+function sentClaudeCodeVersion(request: Request): string | undefined {
+  const userAgent = request.headers.get('user-agent')
+  if (!userAgent?.startsWith('claude-cli/')) return undefined
+
+  const suffix = ' (external, cli)'
+  if (!userAgent.endsWith(suffix)) return undefined
+  const version = userAgent.slice('claude-cli/'.length, -suffix.length)
+  return isValidClaudeCodeVersion(version) &&
+    formatUserAgent(version) === userAgent
+    ? version
+    : undefined
 }
 
 export default Plugin.define({
@@ -732,18 +751,22 @@ export default Plugin.define({
       if (!event.response.ok) {
         if (lease) releaseAliasLease(event.request, lease)
         if (!hasExplicitVersionOverride && event.response.status === 400) {
-          const rejection = await detectClaudeCodeVersionRejection(
-            event.response,
-            claudeCodeVersion,
-          )
-          if (
-            rejection &&
-            compareClaudeCodeVersions(
-              rejection.requiredVersion,
-              claudeCodeVersion,
-            ) === 1
-          ) {
-            claudeCodeVersion = rejection.requiredVersion
+          const sentVersion = sentClaudeCodeVersion(event.request)
+          const rejection = sentVersion
+            ? await detectClaudeCodeVersionRejection(
+                event.response,
+                sentVersion,
+              )
+            : undefined
+          if (rejection) {
+            if (
+              compareClaudeCodeVersions(
+                rejection.requiredVersion,
+                claudeCodeVersion,
+              ) === 1
+            ) {
+              claudeCodeVersion = rejection.requiredVersion
+            }
             const key = versionGateRecoveryKey(
               event.sessionID,
               event.agent,

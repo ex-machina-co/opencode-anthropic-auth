@@ -1411,7 +1411,7 @@ describe('session http.response hook', () => {
       }
       await sessionHooks.get('http.request')!(requestEvent)
 
-      await sessionHooks.get('http.response')!({
+      const responseEvent: any = {
         sessionID: requestEvent.sessionID,
         agent: requestEvent.agent,
         model,
@@ -1419,8 +1419,9 @@ describe('session http.response hook', () => {
         response: new Response(versionRejectionBody('2.9.99', '3.0.0'), {
           status: 400,
         }),
-      })
-      expect(sessionHooks.has('retry')).toBeFalse()
+      }
+      await sessionHooks.get('http.response')!(responseEvent)
+      expect(responseEvent.response.headers.get('x-should-retry')).toBeNull()
 
       const laterRequest: any = {
         ...requestEvent,
@@ -1432,6 +1433,69 @@ describe('session http.response hook', () => {
       await sessionHooks.get('http.request')!(laterRequest)
       expect(laterRequest.request.headers.get('user-agent')).toBe(
         'claude-cli/2.9.99 (external, cli)',
+      )
+    } finally {
+      restoreVersionOverride(originalVersion)
+    }
+  })
+
+  test('retries concurrent stale-version responses for distinct recovery keys', async () => {
+    const originalVersion = process.env[ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR]
+    delete process.env[ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR]
+
+    try {
+      const { ctx, sessionHooks } = anthropicOAuthContext()
+      await plugin.setup(ctx as any)
+      const model = { providerID: 'anthropic', id: 'claude-opus-test' }
+      const requestHook = sessionHooks.get('http.request')!
+      const responseHook = sessionHooks.get('http.response')!
+      const makeRequest = (sessionID: string) => ({
+        sessionID,
+        agent: 'build',
+        model,
+        request: new Request('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          body: '{}',
+        }),
+      })
+
+      const first: any = makeRequest('session-version-gate-concurrent-a')
+      const second: any = makeRequest('session-version-gate-concurrent-b')
+      await requestHook(first)
+      await requestHook(second)
+      expect(first.request.headers.get('user-agent')).toBe(
+        'claude-cli/2.1.280 (external, cli)',
+      )
+      expect(second.request.headers.get('user-agent')).toBe(
+        'claude-cli/2.1.280 (external, cli)',
+      )
+
+      const firstResponse: any = {
+        ...first,
+        request: new Request(first.request),
+        response: new Response(versionRejectionBody('2.1.280', '2.1.281'), {
+          status: 400,
+        }),
+      }
+      const secondResponse: any = {
+        ...second,
+        request: new Request(second.request),
+        response: new Response(versionRejectionBody('2.1.280', '2.1.282'), {
+          status: 400,
+        }),
+      }
+
+      await Promise.all([
+        responseHook(firstResponse),
+        responseHook(secondResponse),
+      ])
+      expect(firstResponse.response.headers.get('x-should-retry')).toBe('true')
+      expect(secondResponse.response.headers.get('x-should-retry')).toBe('true')
+
+      const later: any = makeRequest('session-version-gate-after-concurrent')
+      await requestHook(later)
+      expect(later.request.headers.get('user-agent')).toBe(
+        'claude-cli/2.1.282 (external, cli)',
       )
     } finally {
       restoreVersionOverride(originalVersion)
