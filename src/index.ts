@@ -2,7 +2,11 @@ import { createHash, createHmac, type Hmac, randomBytes } from 'node:crypto'
 import { type Credential, Plugin } from '@opencode/plugin'
 import { authorize, exchange, refreshToken } from './auth.ts'
 import { BodyLimitError, contentLength, readBoundedText } from './bounded.ts'
-import { resolveClaudeCodeVersion } from './config.ts'
+import {
+  ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR,
+  compareClaudeCodeVersions,
+  resolveClaudeCodeVersion,
+} from './config.ts'
 import { CLAUDE_CODE_VERSION, REQUIRED_BETAS } from './constants.ts'
 import {
   createConnectionLabel,
@@ -20,6 +24,7 @@ import {
   setOAuthHeaders,
   ToolNameAliasTable,
 } from './transform.ts'
+import { detectClaudeCodeVersionRejection } from './version-rejection.ts'
 
 const PLUGIN_ID = 'ex-machina.anthropic-auth'
 const INTEGRATION_ID = 'anthropic'
@@ -40,6 +45,7 @@ const CONNECTION_TRACKING_TTL_MS = 5 * 60_000
 const MAX_ACTIVE_RESPONSE_TRANSFORMS = 256
 const MAX_RECONSTRUCTED_ALIAS_LOOKUPS = 32
 const MAX_TRACKED_REQUEST_URL_BYTES = 8 * 1024
+const MAX_VERSION_GATE_RECOVERIES = 256
 const UNKNOWN_CONNECTION = 'Unknown OAuth connection'
 const AMBIGUOUS_CONNECTION = 'Ambiguous OAuth connection'
 
@@ -248,22 +254,40 @@ function warnIfInsecureUnsupported() {
   )
 }
 
+function versionGateRecoveryKey(
+  sessionID: string,
+  agent: string,
+  providerID: string,
+  modelID: string,
+): string {
+  return `${sessionID}\u0000${agent}\u0000${providerID}\u0000${modelID}`
+}
+
 export default Plugin.define({
   id: PLUGIN_ID,
   setup: async (ctx) => {
     warnIfInsecureUnsupported()
     // Resolve once so user-agent and billing metadata agree for every request
     // handled by this plugin generation.
-    const versionResolution = resolveClaudeCodeVersion()
+    const rawVersionOverride =
+      process.env[ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR]
+    const versionResolution = resolveClaudeCodeVersion(rawVersionOverride)
     if (versionResolution.type === 'invalid') {
       console.error(`[ex-machina.anthropic-auth] ${versionResolution.error}`)
     } else if (versionResolution.type === 'outdated') {
       console.warn(`[ex-machina.anthropic-auth] ${versionResolution.warning}`)
     }
-    const claudeCodeVersion =
+    let claudeCodeVersion =
       versionResolution.type === 'invalid'
         ? CLAUDE_CODE_VERSION
         : versionResolution.version
+    // A valid explicit override is absolute. Automatic adoption is only the
+    // fallback path for an unset (or malformed and therefore ignored) value.
+    const hasExplicitVersionOverride = rawVersionOverride !== undefined
+    // This set is only an at-most-once limiter. The exact response is marked
+    // retryable below, so this key never authorizes an unrelated retry event.
+    // On overflow, recovery fails closed rather than forgetting old entries.
+    const versionGateRecoveries = new Set<string>()
 
     const aliasesByRequest = new WeakMap<Request, AliasLease>()
     const aliasesByFingerprint = new Map<string, AliasLease>()
@@ -706,6 +730,40 @@ export default Plugin.define({
       if (!ownedDirectly && !lease) return
       if (!event.response.ok) {
         if (lease) releaseAliasLease(event.request, lease)
+        if (!hasExplicitVersionOverride && event.response.status === 400) {
+          const rejection = await detectClaudeCodeVersionRejection(
+            event.response,
+            claudeCodeVersion,
+          )
+          if (
+            rejection &&
+            compareClaudeCodeVersions(
+              rejection.requiredVersion,
+              claudeCodeVersion,
+            ) === 1
+          ) {
+            claudeCodeVersion = rejection.requiredVersion
+            const key = versionGateRecoveryKey(
+              event.sessionID,
+              event.agent,
+              event.model.providerID,
+              event.model.id,
+            )
+            if (
+              !versionGateRecoveries.has(key) &&
+              versionGateRecoveries.size < MAX_VERSION_GATE_RECOVERIES
+            ) {
+              versionGateRecoveries.add(key)
+              const headers = new Headers(event.response.headers)
+              headers.set('x-should-retry', 'true')
+              event.response = new Response(event.response.body, {
+                status: event.response.status,
+                statusText: event.response.statusText,
+                headers,
+              })
+            }
+          }
+        }
         if (event.response.status === 429) {
           const enhanced = await enhanceRateLimitResponse(
             event.response,
@@ -743,6 +801,7 @@ export default Plugin.define({
         clearTimeout(entry.timer)
       }
       connectionByAuthorization.clear()
+      versionGateRecoveries.clear()
       for (const timer of refreshCacheTimers.values()) clearTimeout(timer)
       refreshCacheTimers.clear()
       refreshCache.clear()
