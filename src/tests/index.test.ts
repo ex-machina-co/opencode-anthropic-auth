@@ -1297,6 +1297,251 @@ describe('session http.response hook', () => {
     return mocked
   }
 
+  function versionRejectionBody(
+    rejectedVersion: string,
+    requiredVersion: string,
+  ) {
+    return JSON.stringify({
+      type: 'error',
+      error: {
+        type: 'invalid_request_error',
+        message:
+          `Claude Code ${rejectedVersion} does not support this model; ` +
+          `version ${requiredVersion} or newer is required. Run 'claude update', ` +
+          'or update the Claude desktop app, then try again.',
+        details: { error_code: 'claude_code_version_too_old' },
+      },
+      request_id: 'req_fixture_version_gate',
+    })
+  }
+
+  test('adopts an exact version-gate floor and marks only its response retryable', async () => {
+    const originalVersion = process.env[ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR]
+    delete process.env[ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR]
+
+    try {
+      const { ctx, sessionHooks } = anthropicOAuthContext()
+      await plugin.setup(ctx as any)
+      const model = { providerID: 'anthropic', id: 'claude-opus-test' }
+      const requestHook = sessionHooks.get('http.request')!
+      const responseHook = sessionHooks.get('http.response')!
+      const makeRequest = () => ({
+        sessionID: 'session-version-gate',
+        agent: 'build',
+        model,
+        request: new Request('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: 'version gate fixture' }],
+          }),
+        }),
+      })
+
+      const initial: any = makeRequest()
+      await requestHook(initial)
+      expect(initial.request.headers.get('user-agent')).toBe(
+        'claude-cli/2.1.280 (external, cli)',
+      )
+      expect(
+        JSON.parse(await initial.request.clone().text()).system[0].text,
+      ).toContain('cc_version=2.1.280.')
+
+      const firstBody = versionRejectionBody('2.1.280', '2.1.281')
+      const firstResponse: any = {
+        sessionID: initial.sessionID,
+        agent: initial.agent,
+        model,
+        request: new Request(initial.request),
+        response: new Response(firstBody, {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        }),
+      }
+      await responseHook(firstResponse)
+      expect(firstResponse.response.headers.get('x-should-retry')).toBe('true')
+      expect(await firstResponse.response.text()).toBe(firstBody)
+
+      const retried: any = makeRequest()
+      await requestHook(retried)
+      expect(retried.request.headers.get('user-agent')).toBe(
+        'claude-cli/2.1.281 (external, cli)',
+      )
+      expect(
+        JSON.parse(await retried.request.clone().text()).system[0].text,
+      ).toContain('cc_version=2.1.281.')
+
+      const secondResponse: any = {
+        sessionID: retried.sessionID,
+        agent: retried.agent,
+        model,
+        request: new Request(retried.request),
+        response: new Response(versionRejectionBody('2.1.281', '2.1.282'), {
+          status: 400,
+        }),
+      }
+      await responseHook(secondResponse)
+      expect(secondResponse.response.headers.get('x-should-retry')).toBeNull()
+
+      const laterRequest: any = makeRequest()
+      await requestHook(laterRequest)
+      expect(laterRequest.request.headers.get('user-agent')).toBe(
+        'claude-cli/2.1.282 (external, cli)',
+      )
+    } finally {
+      restoreVersionOverride(originalVersion)
+    }
+  })
+
+  test('does not replace or retry an explicit version override', async () => {
+    const originalVersion = process.env[ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR]
+    process.env[ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR] = '2.9.99'
+
+    try {
+      const { ctx, sessionHooks } = anthropicOAuthContext()
+      await plugin.setup(ctx as any)
+      const model = { providerID: 'anthropic', id: 'claude-opus-test' }
+      const requestEvent: any = {
+        sessionID: 'session-version-override',
+        agent: 'build',
+        model,
+        request: new Request('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          body: '{}',
+        }),
+      }
+      await sessionHooks.get('http.request')!(requestEvent)
+
+      const responseEvent: any = {
+        sessionID: requestEvent.sessionID,
+        agent: requestEvent.agent,
+        model,
+        request: new Request(requestEvent.request),
+        response: new Response(versionRejectionBody('2.9.99', '3.0.0'), {
+          status: 400,
+        }),
+      }
+      await sessionHooks.get('http.response')!(responseEvent)
+      expect(responseEvent.response.headers.get('x-should-retry')).toBeNull()
+
+      const laterRequest: any = {
+        ...requestEvent,
+        request: new Request('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          body: '{}',
+        }),
+      }
+      await sessionHooks.get('http.request')!(laterRequest)
+      expect(laterRequest.request.headers.get('user-agent')).toBe(
+        'claude-cli/2.9.99 (external, cli)',
+      )
+    } finally {
+      restoreVersionOverride(originalVersion)
+    }
+  })
+
+  test('retries concurrent stale-version responses for distinct recovery keys', async () => {
+    const originalVersion = process.env[ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR]
+    delete process.env[ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR]
+
+    try {
+      const { ctx, sessionHooks } = anthropicOAuthContext()
+      await plugin.setup(ctx as any)
+      const model = { providerID: 'anthropic', id: 'claude-opus-test' }
+      const requestHook = sessionHooks.get('http.request')!
+      const responseHook = sessionHooks.get('http.response')!
+      const makeRequest = (sessionID: string) => ({
+        sessionID,
+        agent: 'build',
+        model,
+        request: new Request('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          body: '{}',
+        }),
+      })
+
+      const first: any = makeRequest('session-version-gate-concurrent-a')
+      const second: any = makeRequest('session-version-gate-concurrent-b')
+      await requestHook(first)
+      await requestHook(second)
+      expect(first.request.headers.get('user-agent')).toBe(
+        'claude-cli/2.1.280 (external, cli)',
+      )
+      expect(second.request.headers.get('user-agent')).toBe(
+        'claude-cli/2.1.280 (external, cli)',
+      )
+
+      const firstResponse: any = {
+        ...first,
+        request: new Request(first.request),
+        response: new Response(versionRejectionBody('2.1.280', '2.1.281'), {
+          status: 400,
+        }),
+      }
+      const secondResponse: any = {
+        ...second,
+        request: new Request(second.request),
+        response: new Response(versionRejectionBody('2.1.280', '2.1.282'), {
+          status: 400,
+        }),
+      }
+
+      await Promise.all([
+        responseHook(firstResponse),
+        responseHook(secondResponse),
+      ])
+      expect(firstResponse.response.headers.get('x-should-retry')).toBe('true')
+      expect(secondResponse.response.headers.get('x-should-retry')).toBe('true')
+
+      const later: any = makeRequest('session-version-gate-after-concurrent')
+      await requestHook(later)
+      expect(later.request.headers.get('user-agent')).toBe(
+        'claude-cli/2.1.282 (external, cli)',
+      )
+    } finally {
+      restoreVersionOverride(originalVersion)
+    }
+  })
+
+  test('can recover after ignoring a malformed version override', async () => {
+    const originalVersion = process.env[ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR]
+    const consoleError = spyOn(console, 'error').mockImplementation(() => {})
+    process.env[ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR] = 'not-a-version'
+
+    try {
+      const { ctx, sessionHooks } = anthropicOAuthContext()
+      await plugin.setup(ctx as any)
+      const model = { providerID: 'anthropic', id: 'claude-opus-test' }
+      const requestEvent: any = {
+        sessionID: 'session-malformed-version-override',
+        agent: 'build',
+        model,
+        request: new Request('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          body: '{}',
+        }),
+      }
+      await sessionHooks.get('http.request')!(requestEvent)
+
+      const responseEvent: any = {
+        sessionID: requestEvent.sessionID,
+        agent: requestEvent.agent,
+        model,
+        request: new Request(requestEvent.request),
+        response: new Response(
+          versionRejectionBody(CLAUDE_CODE_VERSION, '2.1.281'),
+          { status: 400 },
+        ),
+      }
+      await sessionHooks.get('http.response')!(responseEvent)
+
+      expect(consoleError).toHaveBeenCalledTimes(1)
+      expect(responseEvent.response.headers.get('x-should-retry')).toBe('true')
+    } finally {
+      consoleError.mockRestore()
+      restoreVersionOverride(originalVersion)
+    }
+  })
+
   test('shares identical long aliases across concurrent reconstructed responses and cleans up after both', async () => {
     const { ctx, sessionHooks } = createMockContext()
     ;(ctx.integration.connection.active as any).mockImplementation(

@@ -1064,7 +1064,7 @@ describe('rewriteRequestBody', () => {
 
     expect(once.system).toHaveLength(3)
     expect(once.system[0].text).toBe(
-      'x-anthropic-billing-header: cc_version=2.1.275.1e2; cc_entrypoint=sdk-cli; cch=2cf24;',
+      'x-anthropic-billing-header: cc_version=2.1.280.790; cc_entrypoint=sdk-cli; cch=2cf24;',
     )
     expect(once.system[1].text).toBe(CLAUDE_CODE_IDENTITY)
     expect(once.system[2].text).toBe('Meaningful instructions')

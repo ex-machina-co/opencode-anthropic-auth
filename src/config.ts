@@ -14,21 +14,36 @@ export const ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR =
 /**
  * Claude Code releases are `major.minor.patch` with numeric components.
  *
- * Leading zeros are rejected: `02.1.275` is not a release Anthropic publishes,
+ * Leading zeros are rejected: `02.1.280` is not a release Anthropic publishes,
  * so accepting it would report a version string no server-side gate expects.
  */
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const MAX_VERSION_LENGTH = 64
 
+export function isValidClaudeCodeVersion(candidate: string): boolean {
+  return (
+    candidate.length <= MAX_VERSION_LENGTH && VERSION_PATTERN.test(candidate)
+  )
+}
+
 /**
- * Is `candidate` an older Claude Code release than `baseline`?
+ * Compare two validated Claude Code releases.
  *
- * Both arguments must already match `VERSION_PATTERN`. Components are compared
- * numerically rather than lexically — `2.1.99` sorts after `2.1.275` as a
- * string but is the older release — and as `BigInt`, so an unbounded component
- * cannot silently lose precision the way `Number` would.
+ * Components are compared numerically rather than lexically — `2.1.99` sorts
+ * after `2.1.280` as a string but is the older release — and as `BigInt`, so a
+ * large bounded component cannot silently lose precision the way `Number`
+ * would. Invalid input has no ordering and returns `undefined`.
  */
-function isOlderVersion(candidate: string, baseline: string): boolean {
+export function compareClaudeCodeVersions(
+  candidate: string,
+  baseline: string,
+): -1 | 0 | 1 | undefined {
+  if (
+    !isValidClaudeCodeVersion(candidate) ||
+    !isValidClaudeCodeVersion(baseline)
+  ) {
+    return undefined
+  }
   // The `0n` defaults are unreachable — `VERSION_PATTERN` guarantees exactly
   // three components — but they keep the destructuring free of assertions.
   const [major = 0n, minor = 0n, patch = 0n] = candidate
@@ -38,9 +53,10 @@ function isOlderVersion(candidate: string, baseline: string): boolean {
     .split('.')
     .map((part) => BigInt(part))
 
-  if (major !== baseMajor) return major < baseMajor
-  if (minor !== baseMinor) return minor < baseMinor
-  return patch < basePatch
+  if (major !== baseMajor) return major < baseMajor ? -1 : 1
+  if (minor !== baseMinor) return minor < baseMinor ? -1 : 1
+  if (patch !== basePatch) return patch < basePatch ? -1 : 1
+  return 0
 }
 
 /**
@@ -78,7 +94,7 @@ export function resolveClaudeCodeVersion(
   }
 
   const trimmed = raw.length <= MAX_VERSION_LENGTH ? raw.trim() : ''
-  if (!VERSION_PATTERN.test(trimmed)) {
+  if (!isValidClaudeCodeVersion(trimmed)) {
     return {
       type: 'invalid',
       error:
@@ -89,7 +105,7 @@ export function resolveClaudeCodeVersion(
     }
   }
 
-  if (isOlderVersion(trimmed, CLAUDE_CODE_VERSION)) {
+  if (compareClaudeCodeVersions(trimmed, CLAUDE_CODE_VERSION) === -1) {
     return {
       type: 'outdated',
       version: trimmed,
