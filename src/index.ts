@@ -283,7 +283,8 @@ export default Plugin.define({
         : versionResolution.version
     // A valid explicit override is absolute. Automatic adoption is only the
     // fallback path for an unset (or malformed and therefore ignored) value.
-    const hasExplicitVersionOverride = rawVersionOverride !== undefined
+    const hasExplicitVersionOverride =
+      rawVersionOverride !== undefined && versionResolution.type !== 'invalid'
     // This set is only an at-most-once limiter. The exact response is marked
     // retryable below, so this key never authorizes an unrelated retry event.
     // On overflow, recovery fails closed rather than forgetting old entries.

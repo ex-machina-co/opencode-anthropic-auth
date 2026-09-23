@@ -1438,6 +1438,46 @@ describe('session http.response hook', () => {
     }
   })
 
+  test('can recover after ignoring a malformed version override', async () => {
+    const originalVersion = process.env[ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR]
+    const consoleError = spyOn(console, 'error').mockImplementation(() => {})
+    process.env[ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR] = 'not-a-version'
+
+    try {
+      const { ctx, sessionHooks } = anthropicOAuthContext()
+      await plugin.setup(ctx as any)
+      const model = { providerID: 'anthropic', id: 'claude-opus-test' }
+      const requestEvent: any = {
+        sessionID: 'session-malformed-version-override',
+        agent: 'build',
+        model,
+        request: new Request('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          body: '{}',
+        }),
+      }
+      await sessionHooks.get('http.request')!(requestEvent)
+
+      const responseEvent: any = {
+        sessionID: requestEvent.sessionID,
+        agent: requestEvent.agent,
+        model,
+        request: new Request(requestEvent.request),
+        response: new Response(
+          versionRejectionBody(CLAUDE_CODE_VERSION, '2.1.281'),
+          { status: 400 },
+        ),
+      }
+      await sessionHooks.get('http.response')!(responseEvent)
+
+      expect(consoleError).toHaveBeenCalledTimes(1)
+      expect(responseEvent.response.headers.get('x-should-retry')).toBe('true')
+    } finally {
+      consoleError.mockRestore()
+      restoreVersionOverride(originalVersion)
+    }
+  })
+
   test('shares identical long aliases across concurrent reconstructed responses and cleans up after both', async () => {
     const { ctx, sessionHooks } = createMockContext()
     ;(ctx.integration.connection.active as any).mockImplementation(
