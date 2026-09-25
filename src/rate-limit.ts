@@ -9,9 +9,11 @@ const MAX_RATE_LIMIT_PROBE_TIMEOUT_MS = 5000
 const SAFE_GENERATED_LABEL = /^Claude OAuth • [A-F0-9]{8}$/
 const SAFE_GENERIC_LABEL = /^Anthropic(?: [1-9][0-9]{0,5})?$/
 const SAFE_REQUEST_ID = /^req_[a-z0-9][a-z0-9_-]{0,91}$/i
+const SAFE_OVERAGE_DISABLED_REASONS = new Set(['org_level_disabled'])
 const SAFE_ERROR_TYPES = new Set(['rate_limit_error'])
 
 export type RateLimitCategory =
+  | 'fast-mode-credits'
   | 'subscription-usage'
   | 'transient-rate-limit'
   | 'unknown-rate-limit'
@@ -58,7 +60,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function classifyRateLimit(message: string): RateLimitCategory {
+function classifyRateLimit(
+  message: string,
+  errorType: unknown,
+): RateLimitCategory {
+  if (
+    errorType === 'rate_limit_error' &&
+    /\bfast mode\b/i.test(message) &&
+    /\b(?:usage credits?|extra usage)\b/i.test(message)
+  ) {
+    return 'fast-mode-credits'
+  }
   if (
     /\b(?:usage|weekly|monthly(?: spend)?|session|subscription|plan) limit\b/i.test(
       message,
@@ -80,12 +92,25 @@ function classifyRateLimit(message: string): RateLimitCategory {
 
 function canonicalMessage(category: RateLimitCategory): string {
   switch (category) {
+    case 'fast-mode-credits':
+      return 'Anthropic requires usage credits (extra usage) for fast mode on this account.'
     case 'subscription-usage':
       return 'Anthropic reports that this account has reached a subscription or usage limit.'
     case 'transient-rate-limit':
       return 'Anthropic reports a transient request rate limit.'
     default:
       return 'Anthropic returned an unclassified HTTP 429 response.'
+  }
+}
+
+function actionHint(category: RateLimitCategory): string {
+  switch (category) {
+    case 'fast-mode-credits':
+      return ' Enable extra usage for the Anthropic account or organization, or use a model without fast mode.'
+    case 'subscription-usage':
+      return ' Verify or explicitly switch the active Anthropic connection; no automatic account fallback was attempted.'
+    default:
+      return ''
   }
 }
 
@@ -312,6 +337,13 @@ function safeRequestID(value: unknown): string | undefined {
     : undefined
 }
 
+function overageDisabledDiagnostic(headers: Headers): string | undefined {
+  const value = headers.get(
+    'anthropic-ratelimit-unified-overage-disabled-reason',
+  )
+  return value && SAFE_OVERAGE_DISABLED_REASONS.has(value) ? value : undefined
+}
+
 function retryAfterDiagnostic(headers: Headers): string | undefined {
   const value = headers.get('retry-after')
   if (!value) return undefined
@@ -416,10 +448,12 @@ export async function enhanceRateLimitResponse(
     return { response: probe.passthrough(), category: 'unknown-rate-limit' }
   }
 
-  const category = classifyRateLimit(error.message)
+  const category = classifyRateLimit(error.message, error.type)
   const headers = headersAfterBodyTransform(response.headers)
   headers.set('content-type', 'application/json')
-  if (category === 'subscription-usage') headers.set('x-should-retry', 'false')
+  if (category === 'subscription-usage' || category === 'fast-mode-credits') {
+    headers.set('x-should-retry', 'false')
+  }
 
   for (const name of ['request-id', 'x-request-id']) {
     const value = headers.get(name)
@@ -427,6 +461,10 @@ export async function enhanceRateLimitResponse(
   }
   const retryAfter = retryAfterDiagnostic(headers)
   if (headers.has('retry-after') && !retryAfter) headers.delete('retry-after')
+  const overageDisabled =
+    category === 'fast-mode-credits'
+      ? overageDisabledDiagnostic(headers)
+      : undefined
   const requestID =
     safeRequestID(headers.get('request-id')) ??
     safeRequestID(headers.get('x-request-id')) ??
@@ -439,13 +477,10 @@ export async function enhanceRateLimitResponse(
     `category=${category}`,
     `active=${connection}`,
     ...(retryAfter ? [`retry-after=${retryAfter}`] : []),
+    ...(overageDisabled ? [`overage-disabled=${overageDisabled}`] : []),
     ...(requestID ? [`request-id=${requestID}`] : []),
   ]
-  const action =
-    category === 'subscription-usage'
-      ? ' Verify or explicitly switch the active Anthropic connection; no automatic account fallback was attempted.'
-      : ''
-  const message = `[anthropic-auth ${details.join('; ')}] ${canonicalMessage(category)}${action}`
+  const message = `[anthropic-auth ${details.join('; ')}] ${canonicalMessage(category)}${actionHint(category)}`
   const body = JSON.stringify({
     type: 'error',
     error: { type: errorType, message },

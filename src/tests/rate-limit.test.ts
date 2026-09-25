@@ -162,6 +162,104 @@ describe('Anthropic 429 diagnostics', () => {
     expect(result.response.headers.get('x-should-retry')).toBe('false')
   })
 
+  test('explains that fast mode requires usage credits (#274)', async () => {
+    const original = Response.json(
+      {
+        type: 'error',
+        error: {
+          type: 'rate_limit_error',
+          message: 'Usage credits are required for fast mode.',
+        },
+        request_id: 'req_fast_123',
+      },
+      {
+        status: 429,
+        headers: {
+          'x-should-retry': 'false',
+          'anthropic-ratelimit-unified-overage-disabled-reason':
+            'org_level_disabled',
+          'anthropic-ratelimit-unified-reset': '1790812800',
+          'request-id': 'req_fast_123',
+        },
+      },
+    )
+
+    const result = await enhanceRateLimitResponse(original, connection)
+    expect(result.category).toBe('fast-mode-credits')
+    expect(result.response.status).toBe(429)
+    expect(result.response.headers.get('x-should-retry')).toBe('false')
+    const body = (await result.response.json()) as {
+      error: { type: string; message: string }
+      request_id?: string
+    }
+    expect(body.error.type).toBe('rate_limit_error')
+    expect(body.request_id).toBe('req_fast_123')
+    expect(body.error.message).toBe(
+      `[anthropic-auth category=fast-mode-credits; active=${connection}; ` +
+        'overage-disabled=org_level_disabled; request-id=req_fast_123] ' +
+        'Anthropic requires usage credits (extra usage) for fast mode on this account. ' +
+        'Enable extra usage for the Anthropic account or organization, or use a model without fast mode.',
+    )
+    expect(isSubscriptionUsageDiagnostic(body.error.message)).toBe(false)
+  })
+
+  test('marks fast mode credit requirements non-retryable without an upstream hint', async () => {
+    const original = Response.json(
+      {
+        type: 'error',
+        error: {
+          type: 'rate_limit_error',
+          message: 'Extra usage is required for fast mode.',
+        },
+      },
+      { status: 429 },
+    )
+
+    const result = await enhanceRateLimitResponse(original, connection)
+    expect(result.category).toBe('fast-mode-credits')
+    expect(result.response.headers.get('x-should-retry')).toBe('false')
+  })
+
+  test('only classifies the fast mode message on Anthropic rate-limit errors', async () => {
+    const original = Response.json(
+      {
+        type: 'error',
+        error: {
+          type: 'permission_error',
+          message: 'Usage credits are required for fast mode.',
+        },
+      },
+      { status: 429 },
+    )
+
+    const result = await enhanceRateLimitResponse(original, connection)
+    expect(result.category).toBe('unknown-rate-limit')
+  })
+
+  test('omits unrecognized overage-disabled reason values', async () => {
+    const original = Response.json(
+      {
+        type: 'error',
+        error: {
+          type: 'rate_limit_error',
+          message: 'Usage credits are required for fast mode.',
+        },
+      },
+      {
+        status: 429,
+        headers: {
+          'anthropic-ratelimit-unified-overage-disabled-reason':
+            'person@example.com; org_private',
+        },
+      },
+    )
+
+    const result = await enhanceRateLimitResponse(original, connection)
+    const text = await result.response.text()
+    expect(text).not.toContain('person@example.com')
+    expect(text).not.toContain('overage-disabled=')
+  })
+
   test('redacts possible PII and credential material instead of copying the body', async () => {
     const secret = `sk-ant-oat01-${'A'.repeat(48)}`
     const original = Response.json(
