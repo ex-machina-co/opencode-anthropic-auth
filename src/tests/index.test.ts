@@ -3119,21 +3119,41 @@ describe('multiple Anthropic connections and HTTP 429', () => {
           type: 'error',
           error: {
             type: 'rate_limit_error',
-            message: 'You have reached your weekly usage limit.',
+            message: 'Usage credits are required for fast mode.',
+          },
+          request_id: 'req_fast_mode_123',
+        },
+        {
+          status: 429,
+          headers: {
+            'x-should-retry': 'false',
+            'anthropic-ratelimit-unified-overage-disabled-reason':
+              'org_level_disabled',
+            'anthropic-ratelimit-unified-reset': '1790812800',
+            'request-id': 'req_fast_mode_123',
           },
         },
-        { status: 429, headers: { 'retry-after': '30' } },
       ),
     }
     await sessionHooks.get('http.response')!(responseA)
     const bodyA = (await responseA.response.json()) as {
       error: { message: string }
+      request_id?: string
     }
+    expect(bodyA.error.message).toContain('category=fast-mode-credits')
+    expect(bodyA.error.message).toContain(
+      'Anthropic requires usage credits (extra usage) for fast mode on this account.',
+    )
+    expect(bodyA.error.message).toContain(
+      'Enable extra usage for the Anthropic account or organization',
+    )
+    expect(bodyA.error.message).toContain('overage-disabled=org_level_disabled')
+    expect(bodyA.request_id).toBe('req_fast_mode_123')
+    expect(responseA.response.headers.get('x-should-retry')).toBe('false')
     expect(bodyA.error.message).toContain(
       `active=${describeConnection(connectionA)}`,
     )
     expect(bodyA.error.message).not.toContain(describeConnection(connectionB))
-    expect(responseA.response.headers.get('x-should-retry')).toBe('false')
 
     const responseB: any = {
       model,
