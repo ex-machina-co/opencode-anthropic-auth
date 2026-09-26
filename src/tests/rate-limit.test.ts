@@ -220,6 +220,77 @@ describe('Anthropic 429 diagnostics', () => {
     expect(result.response.headers.get('x-should-retry')).toBe('false')
   })
 
+  test('overrides an upstream retryable hint for fast mode credit requirements', async () => {
+    const original = Response.json(
+      {
+        type: 'error',
+        error: {
+          type: 'rate_limit_error',
+          message: 'Usage credits are required for fast mode.',
+        },
+      },
+      { status: 429, headers: { 'x-should-retry': 'true' } },
+    )
+
+    const result = await enhanceRateLimitResponse(original, connection)
+
+    expect(result.category).toBe('fast-mode-credits')
+    expect(result.response.headers.get('x-should-retry')).toBe('false')
+  })
+
+  test.each([
+    'Fast mode is unavailable for this account.',
+    'Usage credits are required for this account.',
+  ])('does not classify near-match wording as fast-mode-credits: %s', async (message) => {
+    const original = Response.json(
+      {
+        type: 'error',
+        error: { type: 'rate_limit_error', message },
+      },
+      { status: 429 },
+    )
+
+    const result = await enhanceRateLimitResponse(original, connection)
+
+    expect(result.category).not.toBe('fast-mode-credits')
+    expect(result.response.headers.get('x-should-retry')).not.toBe('false')
+  })
+
+  test('does not reflect fast-mode provider text, PII, or an unrecognized reason', async () => {
+    const secret = `sk-ant-oat01-${'B'.repeat(48)}`
+    const original = Response.json(
+      {
+        type: 'error',
+        error: {
+          type: 'rate_limit_error',
+          message:
+            `Usage credits are required for fast mode for person@example.com ` +
+            `${secret}; private prompt fragment`,
+        },
+      },
+      {
+        status: 429,
+        headers: {
+          'anthropic-ratelimit-unified-overage-disabled-reason':
+            'person@example.com; org_private',
+        },
+      },
+    )
+
+    const result = await enhanceRateLimitResponse(original, connection)
+    const text = await result.response.text()
+
+    expect(result.category).toBe('fast-mode-credits')
+    expect(text).toContain('category=fast-mode-credits')
+    expect(text).toContain(
+      'Anthropic requires usage credits (extra usage) for fast mode on this account.',
+    )
+    expect(text).not.toContain('person@example.com')
+    expect(text).not.toContain(secret)
+    expect(text).not.toContain('private prompt fragment')
+    expect(text).not.toContain('overage-disabled=')
+  })
+
   test('only classifies the fast mode message on Anthropic rate-limit errors', async () => {
     const original = Response.json(
       {
