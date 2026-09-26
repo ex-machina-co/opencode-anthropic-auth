@@ -864,6 +864,51 @@ describe('auth.loader', () => {
     expect(mockClient.auth.set).not.toHaveBeenCalled()
   })
 
+  test.each([
+    ['malformed JSON', () => new Response('{"access_token":', { status: 200 })],
+    [
+      'oversized body',
+      () => new Response(new Uint8Array(64 * 1024 + 1), { status: 200 }),
+    ],
+    [
+      'invalid UTF-8',
+      () => new Response(new Uint8Array([0xff, 0xfe]), { status: 200 }),
+    ],
+  ])('does not persist or replay a %s successful refresh response', async (_name, response) => {
+    const refresh = `unreadable-success-${String(_name)}`
+    let tokenRefreshCalls = 0
+    const mockClient = createMockClient()
+    globalThis.fetch = mock((input: any) => {
+      const url = extractUrl(input)
+      if (url.includes('/v1/oauth/token')) {
+        tokenRefreshCalls += 1
+        return Promise.resolve(response())
+      }
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const plugin = await getPlugin(mockClient)
+    const result = await plugin.auth.loader(
+      () =>
+        Promise.resolve({
+          type: 'oauth',
+          access: 'expired-access',
+          refresh,
+          expires: 0,
+        }),
+      { models: {} },
+    )
+
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow(
+      'will not be replayed',
+    )
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow(
+      'reconnect Claude Pro/Max',
+    )
+    expect(tokenRefreshCalls).toBe(1)
+    expect(mockClient.auth.set).not.toHaveBeenCalled()
+  })
+
   test('does not replay a consumed token after the result cache expires', async () => {
     const refresh = `expired-cache-${crypto.randomUUID()}`
     const cacheExpirations: Array<() => void> = []
@@ -945,6 +990,110 @@ describe('auth.loader', () => {
     await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow()
     await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow()
     expect(tokenRefreshCalls).toBe(1)
+  })
+
+  test('retries persistence from the cached rotation without another provider call', async () => {
+    const refresh = 'persist-retry-deterministic'
+    let tokenRefreshCalls = 0
+    const mockClient = createMockClient()
+    mockClient.auth.set = mock(() => Promise.reject(new Error('disk failed')))
+    globalThis.fetch = mock((input: any) => {
+      const url = extractUrl(input)
+      if (url.includes('/v1/oauth/token')) {
+        tokenRefreshCalls += 1
+        return Promise.resolve(
+          Response.json({
+            refresh_token: 'persist-retry-rotated-refresh',
+            access_token: 'persist-retry-rotated-access',
+            expires_in: 3600,
+          }),
+        )
+      }
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const plugin = await getPlugin(mockClient)
+    const result = await plugin.auth.loader(
+      () =>
+        Promise.resolve({
+          type: 'oauth',
+          access: 'expired-access',
+          refresh,
+          expires: 0,
+        }),
+      { models: {} },
+    )
+
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow(
+      'could not persist it',
+    )
+
+    mockClient.auth.set.mockResolvedValue(undefined)
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).resolves.toBeDefined()
+
+    expect(tokenRefreshCalls).toBe(1)
+    expect(mockClient.auth.set).toHaveBeenCalledTimes(2)
+  })
+
+  test('cross-store persistence failure still shares one upstream rotation', async () => {
+    const refresh = 'cross-store-persist-failure-deterministic'
+    let tokenRefreshCalls = 0
+    let releaseRotation!: () => void
+    const rotationMayFinish = new Promise<void>((resolve) => {
+      releaseRotation = resolve
+    })
+    const tokenRequestStarted = new Promise<void>((resolve) => {
+      globalThis.fetch = mock(async (input: any) => {
+        const url = extractUrl(input)
+        if (!url.includes('/v1/oauth/token')) {
+          return new Response(null, { status: 200 })
+        }
+        tokenRefreshCalls += 1
+        resolve()
+        await rotationMayFinish
+        return Response.json({
+          refresh_token: 'cross-store-failure-rotated-refresh',
+          access_token: 'cross-store-failure-rotated-access',
+          expires_in: 3600,
+        })
+      }) as unknown as typeof fetch
+    })
+
+    const firstClient = createMockClient()
+    firstClient.auth.set = mock(() => Promise.reject(new Error('disk failed')))
+    const secondClient = createMockClient()
+    const [firstPlugin, secondPlugin] = await Promise.all([
+      getPlugin(firstClient),
+      getPlugin(secondClient),
+    ])
+    const getAuth = () =>
+      Promise.resolve({
+        type: 'oauth',
+        access: 'expired-access',
+        refresh,
+        expires: 0,
+      })
+    const [first, second] = await Promise.all([
+      firstPlugin.auth.loader(getAuth, { models: {} }),
+      secondPlugin.auth.loader(getAuth, { models: {} }),
+    ])
+    const outcomes = Promise.all([
+      first.fetch(MESSAGES_URL, EMPTY_POST).then(
+        () => 'ok' as const,
+        () => 'failed' as const,
+      ),
+      second.fetch(MESSAGES_URL, EMPTY_POST).then(
+        () => 'ok' as const,
+        () => 'failed' as const,
+      ),
+    ])
+    await tokenRequestStarted
+    releaseRotation()
+
+    expect(await outcomes).toEqual(['failed', 'ok'])
+    expect(tokenRefreshCalls).toBe(1)
+    expect(firstClient.auth.set).toHaveBeenCalledTimes(1)
+    expect(secondClient.auth.set).toHaveBeenCalledTimes(1)
   })
 
   test('refresh always reads the latest refresh token, not a stale snapshot', async () => {
