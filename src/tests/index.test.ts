@@ -3126,7 +3126,6 @@ describe('multiple Anthropic connections and HTTP 429', () => {
         {
           status: 429,
           headers: {
-            'x-should-retry': 'false',
             'anthropic-ratelimit-unified-overage-disabled-reason':
               'org_level_disabled',
             'anthropic-ratelimit-unified-reset': '1790812800',
