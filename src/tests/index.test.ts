@@ -28,16 +28,10 @@ const EMPTY_POST = { method: 'POST', body: '{}' } as const
 
 /**
  * Set up the common test scaffolding for concurrent refresh tests:
- * mocks setTimeout to be synchronous and creates a plugin loader
- * with an already-expired OAuth token.
+ * creates a plugin loader with an already-expired OAuth token.
  */
 async function setupExpiredTokenLoader() {
-  // @ts-expect-error — mock override for testing
-  globalThis.setTimeout = mock((handler: () => unknown) => {
-    handler()
-    return 0
-  })
-
+  const refresh = `concurrent-${crypto.randomUUID()}`
   const mockClient = createMockClient()
   const plugin = await getPlugin(mockClient)
   const result = await plugin.auth.loader(
@@ -45,7 +39,7 @@ async function setupExpiredTokenLoader() {
       Promise.resolve({
         type: 'oauth',
         access: 'expired-token',
-        refresh: 'old-refresh',
+        refresh,
         expires: Date.now() - 1000,
       }),
     { models: {} },
@@ -294,40 +288,28 @@ describe('auth.loader', () => {
     expect(mockClient.auth.set).toHaveBeenCalled()
   })
 
-  test('fetch wrapper retries transient token refresh failures', async () => {
+  test.each([
+    [
+      'HTTP 503',
+      () => Promise.resolve(new Response('Temporary failure', { status: 503 })),
+    ],
+    [
+      'network failure',
+      () =>
+        Promise.reject(
+          Object.assign(new Error('fetch failed'), { code: 'ECONNRESET' }),
+        ),
+    ],
+  ])('does not retry an ambiguous %s token refresh', async (_name, failure) => {
     let tokenRefreshCalls = 0
-    const setTimeoutMock = mock((handler: () => unknown) => {
-      handler()
-      return 0
-    })
-
-    // @ts-expect-error — mock override for testing
-    globalThis.setTimeout = setTimeoutMock
+    const refresh = `ambiguous-${crypto.randomUUID()}`
 
     globalThis.fetch = mock((input: any) => {
       const url = extractUrl(input)
-
       if (url.includes('/v1/oauth/token')) {
         tokenRefreshCalls += 1
-
-        if (tokenRefreshCalls === 1) {
-          return Promise.resolve(
-            new Response('Temporary failure', { status: 500 }),
-          )
-        }
-
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              refresh_token: 'new-refresh',
-              access_token: 'new-access',
-              expires_in: 3600,
-            }),
-            { status: 200 },
-          ),
-        )
+        return failure()
       }
-
       return Promise.resolve(new Response(null, { status: 200 }))
     }) as unknown as typeof fetch
 
@@ -338,21 +320,17 @@ describe('auth.loader', () => {
         Promise.resolve({
           type: 'oauth',
           access: 'expired',
-          refresh: 'refresh',
+          refresh,
           expires: Date.now() - 1000,
         }),
       { models: {} },
     )
 
-    await result.fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      body: '{}',
-    })
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow()
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow()
 
-    expect(tokenRefreshCalls).toBe(2)
-    expect(setTimeoutMock).toHaveBeenCalledTimes(1)
-    expect(setTimeoutMock).toHaveBeenCalledWith(expect.any(Function), 500)
-    expect(mockClient.auth.set).toHaveBeenCalledTimes(1)
+    expect(tokenRefreshCalls).toBe(1)
+    expect(mockClient.auth.set).not.toHaveBeenCalled()
   })
 
   test('fetch wrapper does not retry non-transient token refresh failures', async () => {
@@ -546,6 +524,576 @@ describe('auth.loader', () => {
     // With deduplication, client.auth.set should be called exactly once.
     // Without it, each concurrent refresh calls auth.set independently → 5 calls.
     expect(mockClient.auth.set).toHaveBeenCalledTimes(1)
+  })
+
+  test('independent loader instances share one rotating-token refresh', async () => {
+    const refresh = `shared-${crypto.randomUUID()}`
+    let stored = {
+      type: 'oauth',
+      access: 'expired-access',
+      refresh,
+      expires: Date.now() - 1000,
+    }
+    let tokenRefreshCalls = 0
+    let releaseFirst!: () => void
+    const firstMayFinish = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const used = new Set<string>()
+    const mockClient = createMockClient()
+    ;(mockClient.auth.set as any).mockImplementation(async ({ body }: any) => {
+      stored = body
+    })
+
+    globalThis.fetch = mock(async (input: any, init: any) => {
+      const url = extractUrl(input)
+      if (!url.includes('/v1/oauth/token')) {
+        return new Response(null, { status: 200 })
+      }
+
+      tokenRefreshCalls += 1
+      const token = String(JSON.parse(init.body).refresh_token)
+      if (used.has(token)) {
+        return new Response(JSON.stringify({ error: 'invalid_grant' }), {
+          status: 400,
+        })
+      }
+      used.add(token)
+      await firstMayFinish
+      return Response.json({
+        refresh_token: 'rotated-refresh',
+        access_token: 'rotated-access',
+        expires_in: 3600,
+      })
+    }) as unknown as typeof fetch
+
+    const plugin = await getPlugin(mockClient)
+    const getAuth = () => Promise.resolve({ ...stored })
+    const [first, second] = await Promise.all([
+      plugin.auth.loader(getAuth, { models: {} }),
+      plugin.auth.loader(getAuth, { models: {} }),
+    ])
+    const outcomes = [
+      first.fetch(MESSAGES_URL, EMPTY_POST),
+      second.fetch(MESSAGES_URL, EMPTY_POST),
+    ]
+    await Promise.resolve()
+    releaseFirst()
+
+    await expect(Promise.all(outcomes)).resolves.toHaveLength(2)
+    expect(tokenRefreshCalls).toBe(1)
+    expect(mockClient.auth.set).toHaveBeenCalledTimes(1)
+  })
+
+  test('independent credential stores share one rotation and both persist it', async () => {
+    const refresh = `cross-store-${crypto.randomUUID()}`
+    let tokenRefreshCalls = 0
+    let releaseRotation!: () => void
+    const rotationMayFinish = new Promise<void>((resolve) => {
+      releaseRotation = resolve
+    })
+    globalThis.fetch = mock(async (input: any) => {
+      const url = extractUrl(input)
+      if (!url.includes('/v1/oauth/token')) {
+        return new Response(null, { status: 200 })
+      }
+      tokenRefreshCalls += 1
+      await rotationMayFinish
+      return Response.json({
+        refresh_token: 'cross-store-rotated-refresh',
+        access_token: 'cross-store-rotated-access',
+        expires_in: 3600,
+      })
+    }) as unknown as typeof fetch
+
+    const firstClient = createMockClient()
+    const secondClient = createMockClient()
+    const [firstPlugin, secondPlugin] = await Promise.all([
+      getPlugin(firstClient),
+      getPlugin(secondClient),
+    ])
+    const getAuth = () =>
+      Promise.resolve({
+        type: 'oauth',
+        access: 'expired-access',
+        refresh,
+        expires: Date.now() - 1000,
+      })
+    const [first, second] = await Promise.all([
+      firstPlugin.auth.loader(getAuth, { models: {} }),
+      secondPlugin.auth.loader(getAuth, { models: {} }),
+    ])
+    const outcomes = [
+      first.fetch(MESSAGES_URL, EMPTY_POST),
+      second.fetch(MESSAGES_URL, EMPTY_POST),
+    ]
+    await Promise.resolve()
+    releaseRotation()
+
+    await expect(Promise.all(outcomes)).resolves.toHaveLength(2)
+    expect(tokenRefreshCalls).toBe(1)
+    expect(firstClient.auth.set).toHaveBeenCalledTimes(1)
+    expect(secondClient.auth.set).toHaveBeenCalledTimes(1)
+    expect(firstClient.auth.set).toHaveBeenCalledWith({
+      path: { id: 'anthropic' },
+      body: {
+        type: 'oauth',
+        refresh: 'cross-store-rotated-refresh',
+        access: 'cross-store-rotated-access',
+        expires: expect.any(Number),
+      },
+    })
+    expect(secondClient.auth.set).toHaveBeenCalledWith({
+      path: { id: 'anthropic' },
+      body: {
+        type: 'oauth',
+        refresh: 'cross-store-rotated-refresh',
+        access: 'cross-store-rotated-access',
+        expires: expect.any(Number),
+      },
+    })
+  })
+
+  test('a later stale credential store reuses the settled rotation', async () => {
+    const refresh = `later-store-${crypto.randomUUID()}`
+    let tokenRefreshCalls = 0
+    const authorizations: Array<string | null> = []
+    globalThis.fetch = mock((input: any, init: any) => {
+      const url = extractUrl(input)
+      if (url.includes('/v1/oauth/token')) {
+        tokenRefreshCalls += 1
+        return Promise.resolve(
+          Response.json({
+            refresh_token: 'later-store-rotated-refresh',
+            access_token: 'later-store-rotated-access',
+            expires_in: 3600,
+          }),
+        )
+      }
+      authorizations.push(new Headers(init.headers).get('authorization'))
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const firstClient = createMockClient()
+    const secondClient = createMockClient()
+    const staleAuth = () =>
+      Promise.resolve({
+        type: 'oauth',
+        access: 'expired-access',
+        refresh,
+        expires: Date.now() - 1000,
+      })
+    const firstPlugin = await getPlugin(firstClient)
+    const first = await firstPlugin.auth.loader(staleAuth, { models: {} })
+    await first.fetch(MESSAGES_URL, EMPTY_POST)
+
+    const secondPlugin = await getPlugin(secondClient)
+    const second = await secondPlugin.auth.loader(staleAuth, { models: {} })
+    await second.fetch(MESSAGES_URL, EMPTY_POST)
+
+    expect(tokenRefreshCalls).toBe(1)
+    expect(firstClient.auth.set).toHaveBeenCalledTimes(1)
+    expect(secondClient.auth.set).toHaveBeenCalledTimes(1)
+    expect(secondClient.auth.set).toHaveBeenCalledWith({
+      path: { id: 'anthropic' },
+      body: {
+        type: 'oauth',
+        refresh: 'later-store-rotated-refresh',
+        access: 'later-store-rotated-access',
+        expires: expect.any(Number),
+      },
+    })
+    expect(authorizations).toEqual([
+      'Bearer later-store-rotated-access',
+      'Bearer later-store-rotated-access',
+    ])
+  })
+
+  test('reuses a settled refresh result for a stale credential snapshot', async () => {
+    const refresh = `settled-${crypto.randomUUID()}`
+    let tokenRefreshCalls = 0
+    globalThis.fetch = mock((input: any) => {
+      const url = extractUrl(input)
+      if (url.includes('/v1/oauth/token')) {
+        tokenRefreshCalls += 1
+        return Promise.resolve(
+          Response.json({
+            refresh_token: 'rotated-refresh',
+            access_token: 'rotated-access',
+            expires_in: 3600,
+          }),
+        )
+      }
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const plugin = await getPlugin()
+    const result = await plugin.auth.loader(
+      () =>
+        Promise.resolve({
+          type: 'oauth',
+          access: 'expired-access',
+          refresh,
+          expires: Date.now() - 1000,
+        }),
+      { models: {} },
+    )
+
+    await result.fetch(MESSAGES_URL, EMPTY_POST)
+    await result.fetch(MESSAGES_URL, EMPTY_POST)
+
+    expect(tokenRefreshCalls).toBe(1)
+  })
+
+  test('reuses a newly persisted valid access token instead of refreshing again', async () => {
+    const expired = {
+      type: 'oauth',
+      access: 'expired-access',
+      refresh: `stale-${crypto.randomUUID()}`,
+      expires: Date.now() - 1000,
+    }
+    const current = {
+      type: 'oauth',
+      access: 'persisted-access',
+      refresh: 'persisted-refresh',
+      expires: Date.now() + 60_000,
+    }
+    let authReads = 0
+    let tokenRefreshCalls = 0
+    const captured: { authorization: string | null } = {
+      authorization: null,
+    }
+    globalThis.fetch = mock((input: any, init: any) => {
+      const url = extractUrl(input)
+      if (url.includes('/v1/oauth/token')) tokenRefreshCalls += 1
+      else {
+        captured.authorization = new Headers(init.headers).get('authorization')
+      }
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const plugin = await getPlugin()
+    const result = await plugin.auth.loader(
+      () => {
+        authReads += 1
+        return Promise.resolve(authReads < 3 ? expired : current)
+      },
+      { models: {} },
+    )
+
+    await result.fetch(MESSAGES_URL, EMPTY_POST)
+
+    expect(tokenRefreshCalls).toBe(0)
+    expect(captured.authorization).toBe('Bearer persisted-access')
+  })
+
+  test('reports invalid_grant safely with an actionable re-authentication message', async () => {
+    const refresh = `invalid-${crypto.randomUUID()}`
+    const sensitiveBody = JSON.stringify({
+      error: 'invalid_grant',
+      error_description: 'provider-secret-detail',
+    })
+    let tokenRefreshCalls = 0
+    globalThis.fetch = mock((input: any) => {
+      const url = extractUrl(input)
+      if (url.includes('/v1/oauth/token')) {
+        tokenRefreshCalls += 1
+        return Promise.resolve(new Response(sensitiveBody, { status: 400 }))
+      }
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const plugin = await getPlugin()
+    const result = await plugin.auth.loader(
+      () =>
+        Promise.resolve({
+          type: 'oauth',
+          access: 'expired-access',
+          refresh,
+          expires: Date.now() - 1000,
+        }),
+      { models: {} },
+    )
+
+    const error = await result
+      .fetch(MESSAGES_URL, EMPTY_POST)
+      .catch((value: unknown) =>
+        value instanceof Error ? value : new Error(String(value)),
+      )
+    expect(error.message).toContain('reconnect Claude Pro/Max')
+    expect(error.message).not.toContain('provider-secret-detail')
+    expect(error.message).not.toContain(refresh)
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow(
+      'reconnect Claude Pro/Max',
+    )
+    expect(tokenRefreshCalls).toBe(1)
+  })
+
+  test('blocks replay after an invalid token success response', async () => {
+    const refresh = `malformed-success-${crypto.randomUUID()}`
+    let tokenRefreshCalls = 0
+    const mockClient = createMockClient()
+    globalThis.fetch = mock((input: any) => {
+      const url = extractUrl(input)
+      if (url.includes('/v1/oauth/token')) {
+        tokenRefreshCalls += 1
+        return Promise.resolve(Response.json({ access_token: 'incomplete' }))
+      }
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const plugin = await getPlugin(mockClient)
+    const result = await plugin.auth.loader(
+      () =>
+        Promise.resolve({
+          type: 'oauth',
+          access: 'expired-access',
+          refresh,
+          expires: Date.now() - 1000,
+        }),
+      { models: {} },
+    )
+
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow(
+      'invalid success response',
+    )
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow(
+      'reconnect Claude Pro/Max',
+    )
+    expect(tokenRefreshCalls).toBe(1)
+    expect(mockClient.auth.set).not.toHaveBeenCalled()
+  })
+
+  test.each([
+    ['malformed JSON', () => new Response('{"access_token":', { status: 200 })],
+    [
+      'oversized body',
+      () => new Response(new Uint8Array(64 * 1024 + 1), { status: 200 }),
+    ],
+    [
+      'invalid UTF-8',
+      () => new Response(new Uint8Array([0xff, 0xfe]), { status: 200 }),
+    ],
+  ])('does not persist or replay a %s successful refresh response', async (_name, response) => {
+    const refresh = `unreadable-success-${String(_name)}`
+    let tokenRefreshCalls = 0
+    const mockClient = createMockClient()
+    globalThis.fetch = mock((input: any) => {
+      const url = extractUrl(input)
+      if (url.includes('/v1/oauth/token')) {
+        tokenRefreshCalls += 1
+        return Promise.resolve(response())
+      }
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const plugin = await getPlugin(mockClient)
+    const result = await plugin.auth.loader(
+      () =>
+        Promise.resolve({
+          type: 'oauth',
+          access: 'expired-access',
+          refresh,
+          expires: 0,
+        }),
+      { models: {} },
+    )
+
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow(
+      'will not be replayed',
+    )
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow(
+      'reconnect Claude Pro/Max',
+    )
+    expect(tokenRefreshCalls).toBe(1)
+    expect(mockClient.auth.set).not.toHaveBeenCalled()
+  })
+
+  test('does not replay a consumed token after the result cache expires', async () => {
+    const refresh = `expired-cache-${crypto.randomUUID()}`
+    const cacheExpirations: Array<() => void> = []
+    // @ts-expect-error — minimal timer mock for deterministic cache expiry
+    globalThis.setTimeout = mock((handler: () => void, delay?: number) => {
+      if (delay === 30_000) cacheExpirations.push(handler)
+      return { unref() {} }
+    })
+    let tokenRefreshCalls = 0
+    globalThis.fetch = mock((input: any) => {
+      const url = extractUrl(input)
+      if (url.includes('/v1/oauth/token')) {
+        tokenRefreshCalls += 1
+        return Promise.resolve(
+          Response.json({
+            refresh_token: 'cache-expired-rotated-refresh',
+            access_token: 'cache-expired-rotated-access',
+            expires_in: 3600,
+          }),
+        )
+      }
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const plugin = await getPlugin()
+    const result = await plugin.auth.loader(
+      () =>
+        Promise.resolve({
+          type: 'oauth',
+          access: 'expired-access',
+          refresh,
+          expires: Date.now() - 1000,
+        }),
+      { models: {} },
+    )
+
+    await result.fetch(MESSAGES_URL, EMPTY_POST)
+    expect(cacheExpirations).toHaveLength(2)
+    for (const expire of cacheExpirations) expire()
+
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow(
+      'already consumed',
+    )
+    expect(tokenRefreshCalls).toBe(1)
+  })
+
+  test('blocks replay when persisting a rotated credential fails', async () => {
+    const refresh = `persist-failure-${crypto.randomUUID()}`
+    let tokenRefreshCalls = 0
+    const mockClient = createMockClient()
+    mockClient.auth.set = mock(() => Promise.reject(new Error('disk failed')))
+    globalThis.fetch = mock((input: any) => {
+      const url = extractUrl(input)
+      if (url.includes('/v1/oauth/token')) {
+        tokenRefreshCalls += 1
+        return Promise.resolve(
+          Response.json({
+            refresh_token: 'rotated-refresh',
+            access_token: 'rotated-access',
+            expires_in: 3600,
+          }),
+        )
+      }
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const plugin = await getPlugin(mockClient)
+    const result = await plugin.auth.loader(
+      () =>
+        Promise.resolve({
+          type: 'oauth',
+          access: 'expired-access',
+          refresh,
+          expires: Date.now() - 1000,
+        }),
+      { models: {} },
+    )
+
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow()
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow()
+    expect(tokenRefreshCalls).toBe(1)
+  })
+
+  test('retries persistence from the cached rotation without another provider call', async () => {
+    const refresh = 'persist-retry-deterministic'
+    let tokenRefreshCalls = 0
+    const mockClient = createMockClient()
+    mockClient.auth.set = mock(() => Promise.reject(new Error('disk failed')))
+    globalThis.fetch = mock((input: any) => {
+      const url = extractUrl(input)
+      if (url.includes('/v1/oauth/token')) {
+        tokenRefreshCalls += 1
+        return Promise.resolve(
+          Response.json({
+            refresh_token: 'persist-retry-rotated-refresh',
+            access_token: 'persist-retry-rotated-access',
+            expires_in: 3600,
+          }),
+        )
+      }
+      return Promise.resolve(new Response(null, { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const plugin = await getPlugin(mockClient)
+    const result = await plugin.auth.loader(
+      () =>
+        Promise.resolve({
+          type: 'oauth',
+          access: 'expired-access',
+          refresh,
+          expires: 0,
+        }),
+      { models: {} },
+    )
+
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).rejects.toThrow(
+      'could not persist it',
+    )
+
+    mockClient.auth.set.mockResolvedValue(undefined)
+    await expect(result.fetch(MESSAGES_URL, EMPTY_POST)).resolves.toBeDefined()
+
+    expect(tokenRefreshCalls).toBe(1)
+    expect(mockClient.auth.set).toHaveBeenCalledTimes(2)
+  })
+
+  test('cross-store persistence failure still shares one upstream rotation', async () => {
+    const refresh = 'cross-store-persist-failure-deterministic'
+    let tokenRefreshCalls = 0
+    let releaseRotation!: () => void
+    const rotationMayFinish = new Promise<void>((resolve) => {
+      releaseRotation = resolve
+    })
+    const tokenRequestStarted = new Promise<void>((resolve) => {
+      globalThis.fetch = mock(async (input: any) => {
+        const url = extractUrl(input)
+        if (!url.includes('/v1/oauth/token')) {
+          return new Response(null, { status: 200 })
+        }
+        tokenRefreshCalls += 1
+        resolve()
+        await rotationMayFinish
+        return Response.json({
+          refresh_token: 'cross-store-failure-rotated-refresh',
+          access_token: 'cross-store-failure-rotated-access',
+          expires_in: 3600,
+        })
+      }) as unknown as typeof fetch
+    })
+
+    const firstClient = createMockClient()
+    firstClient.auth.set = mock(() => Promise.reject(new Error('disk failed')))
+    const secondClient = createMockClient()
+    const [firstPlugin, secondPlugin] = await Promise.all([
+      getPlugin(firstClient),
+      getPlugin(secondClient),
+    ])
+    const getAuth = () =>
+      Promise.resolve({
+        type: 'oauth',
+        access: 'expired-access',
+        refresh,
+        expires: 0,
+      })
+    const [first, second] = await Promise.all([
+      firstPlugin.auth.loader(getAuth, { models: {} }),
+      secondPlugin.auth.loader(getAuth, { models: {} }),
+    ])
+    const outcomes = Promise.all([
+      first.fetch(MESSAGES_URL, EMPTY_POST).then(
+        () => 'ok' as const,
+        () => 'failed' as const,
+      ),
+      second.fetch(MESSAGES_URL, EMPTY_POST).then(
+        () => 'ok' as const,
+        () => 'failed' as const,
+      ),
+    ])
+    await tokenRequestStarted
+    releaseRotation()
+
+    expect(await outcomes).toEqual(['failed', 'ok'])
+    expect(tokenRefreshCalls).toBe(1)
+    expect(firstClient.auth.set).toHaveBeenCalledTimes(1)
+    expect(secondClient.auth.set).toHaveBeenCalledTimes(1)
   })
 
   test('refresh always reads the latest refresh token, not a stale snapshot', async () => {
