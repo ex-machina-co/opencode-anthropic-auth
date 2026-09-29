@@ -34,7 +34,7 @@ import { detectClaudeCodeVersionRejection } from './version-rejection.ts'
 const PLUGIN_ID = 'ex-machina.anthropic-auth'
 const INTEGRATION_ID = 'anthropic'
 const REFRESH_CACHE_GRACE_MS = 30_000
-const MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024
+const MAX_REQUEST_BODY_BYTES = 32 * 1024 * 1024
 const MAX_ACTIVE_ALIAS_REQUESTS = 256
 const MAX_REQUEST_ALIAS_ENTRIES = 256
 const MAX_REQUEST_ALIAS_BYTES = 16 * 1024

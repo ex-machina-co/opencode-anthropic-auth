@@ -1227,7 +1227,43 @@ describe('session http.request hook', () => {
     expect(event.request.headers.get('authorization')).toBeNull()
   })
 
-  test('rejects a declared request body above 10 MiB', async () => {
+  test('rewrites an image-heavy request body above 10 MiB', async () => {
+    const { ctx, sessionHooks } = anthropicOAuthContext()
+    await plugin.setup(ctx as any)
+    const imageData = 'A'.repeat(12 * 1024 * 1024)
+    const event: any = {
+      model: { providerID: 'anthropic', modelID: 'claude-3' },
+      request: new Request('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        body: JSON.stringify({
+          system: 'Look at this',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/png',
+                    data: imageData,
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      }),
+    }
+    await sessionHooks.get('http.request')!(event)
+    const parsedBody = JSON.parse(await event.request.text())
+    expect(parsedBody.system[1].text).toBe(
+      "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+    )
+    expect(parsedBody.messages[0].content[0].source.data).toBe(imageData)
+  })
+
+  test('rejects a declared request body above 32 MiB', async () => {
     const { ctx, sessionHooks } = anthropicOAuthContext()
     await plugin.setup(ctx as any)
 
@@ -1235,7 +1271,7 @@ describe('session http.request hook', () => {
       'https://api.anthropic.com/v1/messages',
       {
         method: 'POST',
-        headers: { 'content-length': String(10 * 1024 * 1024 + 1) },
+        headers: { 'content-length': String(32 * 1024 * 1024 + 1) },
         body: '{}',
       },
     )
@@ -1245,7 +1281,7 @@ describe('session http.request hook', () => {
     }
 
     await expect(sessionHooks.get('http.request')!(event)).rejects.toThrow(
-      'Anthropic request body exceeds 10485760 byte limit',
+      'Anthropic request body exceeds 33554432 byte limit',
     )
     expect(event.request).toBe(originalRequest)
   })
@@ -1930,7 +1966,7 @@ describe('session http.response hook', () => {
     const alias = JSON.parse(await requestEvent.request.clone().text()).tools[0]
       .name
     const reconstructed = new Request(requestEvent.request)
-    reconstructed.headers.set('content-length', String(10 * 1024 * 1024 + 1))
+    reconstructed.headers.set('content-length', String(32 * 1024 * 1024 + 1))
     const responseBody = JSON.stringify({
       type: 'message',
       content: [{ type: 'tool_use', name: alias }],
@@ -1988,7 +2024,7 @@ describe('session http.response hook', () => {
       const alias = JSON.parse(await requestEvent.request.clone().text())
         .tools[0].name
       const reconstructed = new Request(requestEvent.request)
-      reconstructed.headers.set('content-length', String(10 * 1024 * 1024 + 1))
+      reconstructed.headers.set('content-length', String(32 * 1024 * 1024 + 1))
       const responseHook = sessionHooks.get('http.response')!
       const unresolvedEvent: any = {
         model: requestEvent.model,
@@ -2875,14 +2911,14 @@ describe('session http.response hook', () => {
     const emittedAlias = JSON.parse(await requestEvent.request.clone().text())
       .tools[0].name
     const reconstructed = new Request(requestEvent.request)
-    reconstructed.headers.set('content-length', String(10 * 1024 * 1024 + 1))
+    reconstructed.headers.set('content-length', String(32 * 1024 * 1024 + 1))
     const body = 'upstream failure'
     const originalResponse = new Response(body, {
       status: 503,
       statusText: 'Service Unavailable',
       headers: {
         'content-type': 'application/json',
-        'content-length': String(10 * 1024 * 1024 + 1),
+        'content-length': String(32 * 1024 * 1024 + 1),
         etag: '"upstream"',
       },
     })
@@ -2899,7 +2935,7 @@ describe('session http.response hook', () => {
     expect(event.response.status).toBe(503)
     expect(event.response.statusText).toBe('Service Unavailable')
     expect(event.response.headers.get('content-length')).toBe(
-      String(10 * 1024 * 1024 + 1),
+      String(32 * 1024 * 1024 + 1),
     )
     expect(await event.response.text()).toBe(body)
 
