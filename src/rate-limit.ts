@@ -10,6 +10,10 @@ const SAFE_GENERATED_LABEL = /^Claude OAuth • [A-F0-9]{8}$/
 const SAFE_GENERIC_LABEL = /^Anthropic(?: [1-9][0-9]{0,5})?$/
 const SAFE_REQUEST_ID = /^req_[a-z0-9][a-z0-9_-]{0,91}$/i
 const SAFE_ERROR_TYPES = new Set(['rate_limit_error'])
+const ORGANIZATION_OAUTH_DENIED_MESSAGE =
+  'OAuth authentication is currently not allowed for this organization.'
+const ORGANIZATION_OAUTH_GUIDANCE =
+  ' Anthropic is blocking OAuth for this organization, but this response does not identify why. Check for an unpaid or overdue invoice and ask the organization administrator to verify OAuth access. After resolving the cause, reconnect.'
 
 export type RateLimitCategory =
   | 'subscription-usage'
@@ -367,6 +371,61 @@ export function describeConnection(connection: ConnectionInfo): string {
 
 export function isSubscriptionUsageDiagnostic(message: string): boolean {
   return message.startsWith('[anthropic-auth category=subscription-usage;')
+}
+
+export async function enhanceOrganizationOAuthResponse(
+  response: Response,
+): Promise<Response> {
+  if (
+    (response.status !== 401 && response.status !== 403) ||
+    !response.body ||
+    !jsonMediaType(response.headers)
+  ) {
+    return response
+  }
+  const declaredLength = contentLength(response.headers)
+  if (
+    declaredLength !== undefined &&
+    declaredLength > MAX_RATE_LIMIT_BODY_BYTES
+  ) {
+    return response
+  }
+
+  const probe = await probeBody(response, DEFAULT_RATE_LIMIT_PROBE_TIMEOUT_MS)
+  if (probe.type === 'passthrough') return probe.response
+
+  let root: Record<string, unknown>
+  try {
+    const parsed: unknown = JSON.parse(probe.text)
+    if (
+      !isRecord(parsed) ||
+      parsed.type !== 'error' ||
+      !isRecord(parsed.error)
+    ) {
+      return probe.passthrough()
+    }
+    root = parsed
+  } catch {
+    return probe.passthrough()
+  }
+
+  const error = root.error as Record<string, unknown>
+  if (
+    typeof error.message !== 'string' ||
+    error.message.trim().replace(/[.]$/, '').toLowerCase() !==
+      ORGANIZATION_OAUTH_DENIED_MESSAGE.replace(/[.]$/, '').toLowerCase()
+  ) {
+    return probe.passthrough()
+  }
+
+  error.message = `${ORGANIZATION_OAUTH_DENIED_MESSAGE}${ORGANIZATION_OAUTH_GUIDANCE}`
+  const headers = headersAfterBodyTransform(response.headers)
+  probe.dispose()
+  return new Response(JSON.stringify(root), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
 }
 
 export async function enhanceRateLimitResponse(

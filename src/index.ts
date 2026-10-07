@@ -16,6 +16,7 @@ import {
 import {
   createConnectionLabel,
   describeConnection,
+  enhanceOrganizationOAuthResponse,
   enhanceRateLimitResponse,
 } from './rate-limit.ts'
 import {
@@ -750,6 +751,11 @@ export default Plugin.define({
       if (!ownedDirectly && !lease) return
       if (!event.response.ok) {
         if (lease) releaseAliasLease(event.request, lease)
+        if (event.response.status === 401 || event.response.status === 403) {
+          event.response = await enhanceOrganizationOAuthResponse(
+            event.response,
+          )
+        }
         if (!hasExplicitVersionOverride && event.response.status === 400) {
           const sentVersion = sentClaudeCodeVersion(event.request)
           const rejection = sentVersion

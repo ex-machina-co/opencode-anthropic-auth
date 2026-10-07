@@ -2595,6 +2595,47 @@ describe('session http.response hook', () => {
     expect(event.response).toBe(originalResponse)
   })
 
+  test('adds billing and organization-policy guidance to the OAuth denial', async () => {
+    const { ctx, sessionHooks } = anthropicOAuthContext()
+    await plugin.setup(ctx as any)
+    const model = { providerID: 'anthropic', modelID: 'claude-3' }
+    const requestEvent: any = {
+      model,
+      request: new Request('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-3',
+          messages: [{ role: 'user', content: 'hello' }],
+        }),
+      }),
+    }
+    await sessionHooks.get('http.request')!(requestEvent)
+
+    const responseEvent: any = {
+      model,
+      request: requestEvent.request,
+      response: Response.json(
+        {
+          type: 'error',
+          error: {
+            type: 'authentication_error',
+            message:
+              'OAuth authentication is currently not allowed for this organization.',
+          },
+        },
+        { status: 403 },
+      ),
+    }
+    await sessionHooks.get('http.response')!(responseEvent)
+
+    const body = (await responseEvent.response.json()) as {
+      error: { message: string }
+    }
+    expect(body.error.message).toContain('unpaid or overdue invoice')
+    expect(body.error.message).toContain('does not identify why')
+  })
+
   test('leaves structurally matching bearer responses untouched when this plugin did not own the request', async () => {
     const { ctx, sessionHooks } = createMockContext()
     await plugin.setup(ctx as any)

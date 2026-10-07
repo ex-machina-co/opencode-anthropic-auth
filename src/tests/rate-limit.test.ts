@@ -2,11 +2,55 @@ import { describe, expect, test } from 'bun:test'
 import {
   createConnectionLabel,
   describeConnection,
+  enhanceOrganizationOAuthResponse,
   enhanceRateLimitResponse,
   isSubscriptionUsageDiagnostic,
 } from '../rate-limit'
 
 const connection = 'Anthropic 3 [connection af60761e26]'
+
+describe('Anthropic organization OAuth diagnostics', () => {
+  test('explains the organization block and points to billing without claiming its cause', async () => {
+    const original = Response.json(
+      {
+        type: 'error',
+        error: {
+          type: 'authentication_error',
+          message:
+            'OAuth authentication is currently not allowed for this organization.',
+        },
+      },
+      { status: 403, headers: { 'request-id': 'req_org_oauth_123' } },
+    )
+
+    const result = await enhanceOrganizationOAuthResponse(original)
+    expect(result.status).toBe(403)
+    expect(result.headers.get('request-id')).toBe('req_org_oauth_123')
+    expect(result.headers.get('content-length')).toBeNull()
+    const body = (await result.json()) as {
+      error: { type: string; message: string }
+    }
+    expect(body.error.type).toBe('authentication_error')
+    expect(body.error.message).toContain(
+      'OAuth authentication is currently not allowed for this organization.',
+    )
+    expect(body.error.message).toContain('unpaid or overdue invoice')
+    expect(body.error.message).toContain('does not identify why')
+  })
+
+  test('preserves unrelated forbidden response bodies', async () => {
+    const originalBody = {
+      type: 'error',
+      error: { type: 'authentication_error', message: 'Invalid API key.' },
+    }
+    const result = await enhanceOrganizationOAuthResponse(
+      Response.json(originalBody, { status: 403 }),
+    )
+
+    expect(result.status).toBe(403)
+    expect(await result.json()).toEqual(originalBody)
+  })
+})
 
 describe('privacy-safe connection identity', () => {
   test('creates distinguishable labels from random bytes, not credentials', () => {
