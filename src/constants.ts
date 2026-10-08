@@ -42,7 +42,7 @@ export const CCH_POSITIONS = [4, 7, 20]
  * newer is required"). Keep this at or above the latest published
  * `@anthropic-ai/claude-code` release, otherwise new models are unreachable.
  */
-export const CLAUDE_CODE_VERSION = '2.1.284'
+export const CLAUDE_CODE_VERSION = '2.1.293'
 export const CLAUDE_CODE_ENTRYPOINT = 'sdk-cli'
 
 /**
