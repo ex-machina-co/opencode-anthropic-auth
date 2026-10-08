@@ -1,6 +1,6 @@
 {
   "name": "@ex-machina/opencode-anthropic-auth",
-  "version": "2.0.0-next.5",
+  "version": "2.0.0-next.6",
   "type": "module",
   "repository": {
     "type": "git",
