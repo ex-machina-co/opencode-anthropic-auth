@@ -1,5 +1,11 @@
 # @ex-machina/opencode-anthropic-auth
 
+## 2.0.0-next.6
+
+### Patch Changes
+
+- [#282](https://github.com/ex-machina-co/opencode-anthropic-auth/pull/282) [`506a687`](https://github.com/ex-machina-co/opencode-anthropic-auth/commit/506a687ac32613efbd28a446c04daca3fd41d965) Thanks [@Nyattie](https://github.com/Nyattie)! - Raise the request body limit from 10 MiB to 32 MiB to match the Anthropic Messages API, so image-heavy sessions are no longer rejected before they reach Anthropic.
+
 ## 2.0.0-next.5
 
 ### Patch Changes
