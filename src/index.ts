@@ -1,5 +1,9 @@
 import { createHash, createHmac, type Hmac, randomBytes } from 'node:crypto'
 import { type Credential, Plugin } from '@opencode/plugin'
+import type {
+  SessionHttpRequest,
+  SessionHttpResponse,
+} from '@opencode/plugin/promise/session'
 import { authorize, exchange, refreshToken } from './auth.ts'
 import { BodyLimitError, contentLength, readBoundedText } from './bounded.ts'
 import {
@@ -633,7 +637,9 @@ export default Plugin.define({
       })
     })
 
-    await ctx.session.hook('http.request', async (event) => {
+    const transformHttpRequest = async (
+      event: Pick<SessionHttpRequest, 'model' | 'request'>,
+    ) => {
       if (!setupActive) return
       if (event.model.providerID !== INTEGRATION_ID) return
       const active = await resolveActiveOAuth(ctx)
@@ -736,9 +742,12 @@ export default Plugin.define({
         transformedRequests.add(event.request)
       }
       rememberConnection(event.request, connectionDescription)
-    })
+    }
 
-    await ctx.session.hook('http.response', async (event) => {
+    const transformHttpResponse = async (
+      event: Pick<SessionHttpResponse, 'model' | 'request' | 'response'>,
+      recoveryKey: string,
+    ) => {
       if (!setupActive) return
       if (event.model.providerID !== INTEGRATION_ID) return
       if (!hasTransformedOAuthShape(event.request)) return
@@ -770,17 +779,11 @@ export default Plugin.define({
             ) {
               claudeCodeVersion = rejection.requiredVersion
             }
-            const key = versionGateRecoveryKey(
-              event.sessionID,
-              event.agent,
-              event.model.providerID,
-              event.model.id,
-            )
             if (
-              !versionGateRecoveries.has(key) &&
+              !versionGateRecoveries.has(recoveryKey) &&
               versionGateRecoveries.size < MAX_VERSION_GATE_RECOVERIES
             ) {
-              versionGateRecoveries.add(key)
+              versionGateRecoveries.add(recoveryKey)
               const headers = new Headers(event.response.headers)
               headers.set('x-should-retry', 'true')
               event.response = new Response(event.response.body, {
@@ -818,7 +821,43 @@ export default Plugin.define({
         releaseAliases()
         throw error
       }
-    })
+    }
+
+    await ctx.session.hook('http.request', transformHttpRequest)
+    await ctx.session.hook('http.response', (event) =>
+      transformHttpResponse(
+        event,
+        versionGateRecoveryKey(
+          event.sessionID,
+          event.agent,
+          event.model.providerID,
+          event.model.id,
+        ),
+      ),
+    )
+    // Older V2 releases have no stateless HTTP hooks. Register them when available.
+    const generateHook = ctx.generate && Reflect.get(ctx.generate, 'hook')
+    if (typeof generateHook === 'function') {
+      await generateHook.call(
+        ctx.generate,
+        'http.request',
+        transformHttpRequest,
+      )
+      await generateHook.call(
+        ctx.generate,
+        'http.response',
+        (event: Pick<SessionHttpResponse, 'model' | 'request' | 'response'>) =>
+          transformHttpResponse(
+            event,
+            versionGateRecoveryKey(
+              event.request.headers.get('x-opencode-session') ?? '',
+              'stateless',
+              event.model.providerID,
+              event.model.id,
+            ),
+          ),
+      )
+    }
 
     return () => {
       setupActive = false
