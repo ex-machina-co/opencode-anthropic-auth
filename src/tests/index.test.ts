@@ -3277,7 +3277,7 @@ describe('session retry hook', () => {
         type: string
         message: string
         status: number
-        retryAfterMs: number
+        retryAfterMs?: number
       }
       decision?: RetryDecision
     } = {},
@@ -3319,6 +3319,18 @@ describe('session retry hook', () => {
 
     expect(otherProvider.decision).toEqual({ retry: true, delay: 900_000 })
     expect(noRetry.decision).toEqual({ retry: false })
+  })
+
+  test('keeps the host delay when the error carries no retry-after', async () => {
+    const { ctx, sessionHooks } = createMockContext()
+    await plugin.setup(ctx as any)
+    const event = retryEvent({
+      error: { type: 'provider.rate-limit', message: 'x', status: 429 },
+    })
+
+    await sessionHooks.get('retry')!(event)
+
+    expect(event.decision).toEqual({ retry: true, delay: 900_000 })
   })
 
   test('stops applying after setup is disposed', async () => {
