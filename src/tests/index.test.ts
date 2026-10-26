@@ -3,6 +3,7 @@ import { ANTHROPIC_CLAUDE_CODE_VERSION_ENV_VAR } from '../config'
 import { CLAUDE_CODE_VERSION, REQUIRED_BETAS } from '../constants'
 import plugin from '../index'
 import { describeConnection } from '../rate-limit'
+import type { RetryDecision } from '../retry'
 
 function shortAlias(name: string): string {
   return `mcp_T${Buffer.from(new TextEncoder().encode(name)).toString('base64url')}`
@@ -3265,5 +3266,69 @@ describe('multiple Anthropic connections and HTTP 429', () => {
       2,
       connectionB,
     )
+  })
+})
+
+describe('session retry hook', () => {
+  const retryEvent = (
+    overrides: {
+      model?: { providerID: string; id: string }
+      error?: {
+        type: string
+        message: string
+        status: number
+        retryAfterMs: number
+      }
+      decision?: RetryDecision
+    } = {},
+  ) => ({
+    sessionID: 'ses_retry',
+    agent: 'build',
+    model: { providerID: 'anthropic', id: 'claude-sonnet-5-5' },
+    error: {
+      type: 'provider.rate-limit',
+      message: 'Anthropic reports a transient request rate limit.',
+      status: 429,
+      retryAfterMs: 3_995_000,
+    },
+    attempt: 2,
+    decision: { retry: true, delay: 900_000 } as RetryDecision,
+    ...overrides,
+  })
+
+  test('raises the host delay to the provider retry-after', async () => {
+    const { ctx, sessionHooks } = createMockContext()
+    await plugin.setup(ctx as any)
+    const event = retryEvent()
+
+    await sessionHooks.get('retry')!(event)
+
+    expect(event.decision).toEqual({ retry: true, delay: 3_995_000 })
+  })
+
+  test('leaves another provider and a non-retry decision alone', async () => {
+    const { ctx, sessionHooks } = createMockContext()
+    await plugin.setup(ctx as any)
+    const otherProvider = retryEvent({
+      model: { providerID: 'openai', id: 'gpt-6.1' },
+    })
+    const noRetry = retryEvent({ decision: { retry: false } })
+
+    await sessionHooks.get('retry')!(otherProvider)
+    await sessionHooks.get('retry')!(noRetry)
+
+    expect(otherProvider.decision).toEqual({ retry: true, delay: 900_000 })
+    expect(noRetry.decision).toEqual({ retry: false })
+  })
+
+  test('stops applying after setup is disposed', async () => {
+    const { ctx, sessionHooks } = createMockContext()
+    const dispose = await plugin.setup(ctx as any)
+    const event = retryEvent()
+
+    if (typeof dispose === 'function') await dispose()
+    await sessionHooks.get('retry')!(event)
+
+    expect(event.decision).toEqual({ retry: true, delay: 900_000 })
   })
 })

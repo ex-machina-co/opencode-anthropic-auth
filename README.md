@@ -133,6 +133,8 @@ Model-cost display differs by OpenCode version:
 - **OpenCode v1** — The plugin zeros out displayed model costs because usage is covered by the subscription.
 - **OpenCode v2** — OpenCode continues to display Anthropic's API prices even though requests authenticated through Claude Pro/Max use the subscription. Dynamic cost display is deferred until the beta plugin API can safely cancel the required connection event subscription.
 
+OpenCode v2 caps a provider-requested retry delay at 15 minutes, so a rate limit that clears later would be retried too early and fail again until the attempts ran out. The v2 plugin raises that delay back to Anthropic's own `retry-after` through the `session.retry` hook, bounded to 24 hours, so a longer limit can still recover.
+
 ### System Prompt Sanitization
 
 The Anthropic API for Max subscriptions has specific requirements for the system prompt to identify as Claude Code. The plugin rewrites the system prompt on each request using an **anchor-based** approach that minimizes what gets changed:
