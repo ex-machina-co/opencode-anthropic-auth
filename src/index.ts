@@ -18,6 +18,7 @@ import {
   describeConnection,
   enhanceRateLimitResponse,
 } from './rate-limit.ts'
+import { honorRetryAfter } from './retry.ts'
 import {
   createStrippedStream,
   headersAfterBodyTransform,
@@ -818,6 +819,18 @@ export default Plugin.define({
         releaseAliases()
         throw error
       }
+    })
+
+    await ctx.session.hook('retry', (event) => {
+      if (!setupActive) return
+      if (event.model.providerID !== INTEGRATION_ID) return
+      // OpenCode 2.1.x records retryAfterMs on the session error; SDK 2.0.4 types predate it.
+      const retryAfterMs = (event.error as { readonly retryAfterMs?: unknown })
+        .retryAfterMs
+      event.decision = honorRetryAfter(
+        event.decision,
+        typeof retryAfterMs === 'number' ? retryAfterMs : undefined,
+      )
     })
 
     return () => {
