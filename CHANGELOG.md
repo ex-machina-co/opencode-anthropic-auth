@@ -1,5 +1,11 @@
 # @ex-machina/opencode-anthropic-auth
 
+## 2.0.0-next.7
+
+### Patch Changes
+
+- [#307](https://github.com/ex-machina-co/opencode-anthropic-auth/pull/307) [`777cc30`](https://github.com/ex-machina-co/opencode-anthropic-auth/commit/777cc30748e0ce0bad1b5adea5c960392bd02e5a) Thanks [@OverHash](https://github.com/OverHash)! - Raise request body limit from 32MiB -> 128MiB to match increased Anthropic messages API limit
+
 ## 2.0.0-next.6
 
 ### Patch Changes
