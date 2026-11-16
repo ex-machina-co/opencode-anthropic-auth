@@ -1380,13 +1380,13 @@ describe('session http.response hook', () => {
       const initial: any = makeRequest()
       await requestHook(initial)
       expect(initial.request.headers.get('user-agent')).toBe(
-        'claude-cli/2.1.280 (external, cli)',
+        'claude-cli/2.1.322 (external, cli)',
       )
       expect(
         JSON.parse(await initial.request.clone().text()).system[0].text,
-      ).toContain('cc_version=2.1.280.')
+      ).toContain('cc_version=2.1.322.')
 
-      const firstBody = versionRejectionBody('2.1.280', '2.1.281')
+      const firstBody = versionRejectionBody('2.1.322', '2.1.323')
       const firstResponse: any = {
         sessionID: initial.sessionID,
         agent: initial.agent,
@@ -1404,18 +1404,18 @@ describe('session http.response hook', () => {
       const retried: any = makeRequest()
       await requestHook(retried)
       expect(retried.request.headers.get('user-agent')).toBe(
-        'claude-cli/2.1.281 (external, cli)',
+        'claude-cli/2.1.323 (external, cli)',
       )
       expect(
         JSON.parse(await retried.request.clone().text()).system[0].text,
-      ).toContain('cc_version=2.1.281.')
+      ).toContain('cc_version=2.1.323.')
 
       const secondResponse: any = {
         sessionID: retried.sessionID,
         agent: retried.agent,
         model,
         request: new Request(retried.request),
-        response: new Response(versionRejectionBody('2.1.281', '2.1.282'), {
+        response: new Response(versionRejectionBody('2.1.323', '2.1.324'), {
           status: 400,
         }),
       }
@@ -1425,7 +1425,7 @@ describe('session http.response hook', () => {
       const laterRequest: any = makeRequest()
       await requestHook(laterRequest)
       expect(laterRequest.request.headers.get('user-agent')).toBe(
-        'claude-cli/2.1.282 (external, cli)',
+        'claude-cli/2.1.324 (external, cli)',
       )
     } finally {
       restoreVersionOverride(originalVersion)
@@ -1504,23 +1504,23 @@ describe('session http.response hook', () => {
       await requestHook(first)
       await requestHook(second)
       expect(first.request.headers.get('user-agent')).toBe(
-        'claude-cli/2.1.280 (external, cli)',
+        'claude-cli/2.1.322 (external, cli)',
       )
       expect(second.request.headers.get('user-agent')).toBe(
-        'claude-cli/2.1.280 (external, cli)',
+        'claude-cli/2.1.322 (external, cli)',
       )
 
       const firstResponse: any = {
         ...first,
         request: new Request(first.request),
-        response: new Response(versionRejectionBody('2.1.280', '2.1.281'), {
+        response: new Response(versionRejectionBody('2.1.322', '2.1.323'), {
           status: 400,
         }),
       }
       const secondResponse: any = {
         ...second,
         request: new Request(second.request),
-        response: new Response(versionRejectionBody('2.1.280', '2.1.282'), {
+        response: new Response(versionRejectionBody('2.1.322', '2.1.324'), {
           status: 400,
         }),
       }
@@ -1535,7 +1535,7 @@ describe('session http.response hook', () => {
       const later: any = makeRequest('session-version-gate-after-concurrent')
       await requestHook(later)
       expect(later.request.headers.get('user-agent')).toBe(
-        'claude-cli/2.1.282 (external, cli)',
+        'claude-cli/2.1.324 (external, cli)',
       )
     } finally {
       restoreVersionOverride(originalVersion)
@@ -1568,7 +1568,7 @@ describe('session http.response hook', () => {
         model,
         request: new Request(requestEvent.request),
         response: new Response(
-          versionRejectionBody(CLAUDE_CODE_VERSION, '2.1.281'),
+          versionRejectionBody(CLAUDE_CODE_VERSION, '2.1.323'),
           { status: 400 },
         ),
       }
