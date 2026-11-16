@@ -1,5 +1,11 @@
 # @ex-machina/opencode-anthropic-auth
 
+## 2.0.0-next.8
+
+### Patch Changes
+
+- [#313](https://github.com/ex-machina-co/opencode-anthropic-auth/pull/313) [`25a194b`](https://github.com/ex-machina-co/opencode-anthropic-auth/commit/25a194b1bdabdf73f723914708dad9995c8dd662) Thanks [@kunickiaj](https://github.com/kunickiaj)! - Bump reported Claude Code version to 2.1.322 for Claude Fable 5.2 support
+
 ## 2.0.0-next.7
 
 ### Patch Changes
