@@ -772,6 +772,83 @@ describe('integration registration', () => {
   })
 })
 
+describe('stateless generation HTTP hooks', () => {
+  test('transforms OAuth requests and responses without a session identity', async () => {
+    const { ctx } = createMockContext()
+    ctx.integration.connection.active.mockImplementation(async () => ({
+      id: 'conn-generate',
+    }))
+    ctx.integration.connection.resolve.mockImplementation(async () => ({
+      type: 'oauth',
+      methodID: 'claude-max',
+      refresh: 'fixture-refresh',
+      access: 'fixture-access',
+      expires: Date.now() + 100000,
+    }))
+    const hooks = new Map<string, (event: any) => Promise<void> | void>()
+    const cleanup = await plugin.setup({
+      ...ctx,
+      generate: {
+        hook: async (
+          name: string,
+          callback: (event: any) => Promise<void> | void,
+        ) => {
+          hooks.set(name, callback)
+          return { dispose: async () => {} }
+        },
+      },
+    } as any)
+    try {
+      const event = {
+        requestID: 'generate-test',
+        model: { providerID: 'anthropic', id: 'claude-haiku-5-5' },
+        request: new Request('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-opencode-session': 'generate-test',
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-5-5',
+            max_tokens: 64,
+            messages: [{ role: 'user', content: 'Reply OK' }],
+          }),
+        }),
+      }
+      await hooks.get('http.request')!(event)
+      expect(event.request.headers.get('authorization')).toBe(
+        'Bearer fixture-access',
+      )
+      expect(event.request.headers.get('anthropic-beta')).toContain(
+        'oauth-2025-04-20',
+      )
+      const body = await event.request.clone().json()
+      expect(body).toEqual(
+        expect.objectContaining({
+          system: expect.arrayContaining([
+            {
+              type: 'text',
+              text: "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+            },
+          ]),
+        }),
+      )
+      const response = {
+        ...event,
+        response: new Response('data: {"type":"message_stop"}\n\n', {
+          headers: { 'content-type': 'text/event-stream' },
+        }),
+      }
+      await hooks.get('http.response')!(response)
+      expect(await response.response.text()).toBe(
+        'data: {"type":"message_stop"}\n\n',
+      )
+    } finally {
+      if (typeof cleanup === 'function') await cleanup()
+    }
+  })
+})
+
 describe('session http.request hook', () => {
   function anthropicOAuthContext() {
     const mocked = createMockContext()

@@ -27,6 +27,8 @@ An [OpenCode](https://github.com/anomalyco/opencode) plugin that provides Anthro
 
 Both release lines use the same npm package. They are not cross-compatible: the v1 plugin does not load in OpenCode v2, and the v2 plugin does not load in OpenCode v1. OpenCode v2's plugin API is still beta, so review the changelog before upgrading either side.
 
+Stateless `ctx.generate.text` calls receive the same OAuth HTTP transformations as sessions when OpenCode exposes `ctx.generate.hook`. Older V2 releases without these hooks retain session support but cannot apply these transformations to stateless calls.
+
 ## Usage
 
 > [!TIP]
